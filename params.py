@@ -1,24 +1,11 @@
-import os
-import torch
-
-
-# Environment parameters
-PROJECT_ROOT = os.path.dirname(os.path.abspath(__file__))
-RESULT_FOLDER = PROJECT_ROOT + '/results'
-STATS_FOLDER = RESULT_FOLDER + '/stats'
-DEVICE = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
-
-# Parameters for data loading
-DATA_FOLDER = PROJECT_ROOT + '/data'
-CIFAR10_NUM_TRN_SAMPLES = 50000
-NUM_WORKERS = 4
-
-# Network parameters
-INPUT_SHAPE = (3, 32, 32) # Channels, height and width
-NUM_CLASSES = 10
-
-# Experiment configuration parameters
-CONFIG_FAMILY_HEBB = 'hebb' # Key to identify configurations based on hebbian learning
-CONFIG_FAMILY_GDES = 'gdes' # Key to identify configurations based on gradient descent learning
-DEFAULT_CONFIG = 'gdes/config_base'
+# In the Hebbian module, how many kernels to update in parallel on GPU. Larger is faster, but make it smaller to avoid memory overflow.
+HEBB_UPD_GRP = 8
+KEY_VAE_NUM_LATENT_VARS = 'vae_num_latent_vars'
+KEY_WTA_COMPETITIVE_ACT = 'wta_competitive_act'
+KEY_WTA_K = 'wta_k'
+KEY_ICA_ACT_COMPLEMENT_INIT = 'ica_act_complement_init'
+KEY_ICA_ACT_COMPLEMENT_RATIO = 'ica_act_complement_ratio'
+KEY_ICA_ACT_COMPLEMENT_ADAPT = 'ica_act_complement_adapt'
+KEY_ICA_ACT_COMPLEMENT_GRP = 'ica_act_complement_grp'
+KEY_ACT_LAMB = 'act_lamb'
 

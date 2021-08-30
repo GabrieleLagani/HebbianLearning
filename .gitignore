@@ -1,4 +1,6 @@
 .idea/
-data/
-results/stats/
-results.tar
+__pycache__/
+.pytest_cache/
+/datasets/
+/project.tar
+/results.tar
