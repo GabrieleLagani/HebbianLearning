@@ -93,9 +93,11 @@ class Experiment:
 	
 	# Transform output of a processing module to x in the form expected by next processing stages
 	def select_output(self, outputs, i):
+		L = 0
+		if self.config.CONFIG_OPTIONS.get(P.KEY_PRE_NET_MODULES, None) is not None: L = len(self.config.CONFIG_OPTIONS[P.KEY_PRE_NET_MODULES])
 		which_output = '*'
-		if self.config.CONFIG_OPTIONS.get(P.KEY_PRE_NET_OUTPUTS if i < len(self.pre_net_list) else P.KEY_NET_OUTPUTS, None) is not None and (i if i < len(self.pre_net_list) else (i - len(self.pre_net_list))) < len(self.config.CONFIG_OPTIONS[P.KEY_PRE_NET_OUTPUTS if i < len(self.pre_net_list) else P.KEY_NET_OUTPUTS]):
-			which_output = self.config.CONFIG_OPTIONS[P.KEY_PRE_NET_OUTPUTS if i < len(self.pre_net_list) else P.KEY_NET_OUTPUTS][i if i < len(self.pre_net_list) else (i - len(self.pre_net_list))]
+		if self.config.CONFIG_OPTIONS.get(P.KEY_PRE_NET_OUTPUTS if i < L else P.KEY_NET_OUTPUTS, None) is not None and (i if i < L else (i - L)) < len(self.config.CONFIG_OPTIONS[P.KEY_PRE_NET_OUTPUTS if i < L else P.KEY_NET_OUTPUTS]):
+			which_output = self.config.CONFIG_OPTIONS[P.KEY_PRE_NET_OUTPUTS if i < L else P.KEY_NET_OUTPUTS][i if i < L else (i - L)]
 		
 		# Fetch specific entry of output dictionary, if needed
 		if which_output == '*': res = outputs
