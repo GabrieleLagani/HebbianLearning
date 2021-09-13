@@ -173,8 +173,8 @@ def plot_grid(tensor, path, num_rows=8, num_cols=12, bounds=None, norm_sigm=Fals
 	plt.close(fig)
 
 # Function to get inverse of a weight matrix
-def inv_weight(w: torch.Tensor):
-	w_inv = w.view(w.size(0), -1).pinverse().t().view(w.size(0))
+def inv_weight(w):
+	w_inv = w.view(w.size(0), -1).pinverse().t().view(w.size())
 	return w_inv
 
 # Add an entry containing the seed of a training iteration and the test accuracy of the corresponding model to a csv file
