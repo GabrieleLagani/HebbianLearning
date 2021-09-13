@@ -43,13 +43,16 @@ class VisionExperiment(Experiment):
 		
 		# Plot weight visualizations
 		KNL_PLT_PATH = os.path.join(self.config.FIGURE_FOLDER, 'kernels.png')
+		KNL_INV_PLT_PATH = os.path.join(self.config.FIGURE_FOLDER, 'kernels_inv.png')
 		if len(self.pre_net_list) == 0:  # the network is directly attached to the x image
-			self.logger.print_and_log("Plotting weight visualizations...")
-			if hasattr(self.net_list[0], 'conv1'):
-				utils.plot_grid(self.net_list[0].conv1.weight, KNL_PLT_PATH)
-			if hasattr(self.net_list[0], 'fc'):
-				utils.plot_grid(self.net_list[0].fc.weight.view(-1, *self.net_list.get_input_shape()), KNL_PLT_PATH)
-			self.logger.print_and_log("Plots saved!")
+			w = None
+			if hasattr(self.net_list[0], 'conv1'): w = self.net_list[0].conv1.weight
+			if hasattr(self.net_list[0], 'fc'): w = self.net_list[0].fc.weight.view(-1, *self.net_list.get_input_shape())
+			if w is not None:
+				self.logger.print_and_log("Plotting weight visualizations...")
+				utils.plot_grid(w, KNL_PLT_PATH)
+				utils.plot_grid(utils.inv_weight(w), KNL_INV_PLT_PATH)
+				self.logger.print_and_log("Plots saved!")
 		
 		# Add deep layer visualization
 		
