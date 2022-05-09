@@ -87,15 +87,14 @@ class Experiment:
 			for i in range(len(self.net_list)): param_groups += self.net_list[i].get_param_groups()
 			self.optimizer = self.optim_manager.get_optimizer(param_groups) if self.optim_manager is not None else None
 			self.optimizer = utils.dict2obj(d['optimizer'], self.optimizer)
-			self.scheduler = self.sched_manager.get_scheduler(self.optimizer) if self.sched_manager is not None else None
-			self.scheduler = utils.dict2obj(d['scheduler'], self.scheduler)
+			self.scheduler = self.sched_manager.get_scheduler(self.optimizer, saved_state=d['scheduler']) if self.sched_manager is not None else None
 		self.logger.print_and_log("Optimization state recovered!")
 	
-	# Transform output of a processing module to x in the form expected by next processing stages
+	# Transform output of a processing module to input in the form expected by next processing stages
 	def select_output(self, outputs, i):
 		L = 0
 		if self.config.CONFIG_OPTIONS.get(P.KEY_PRE_NET_MODULES, None) is not None: L = len(self.config.CONFIG_OPTIONS[P.KEY_PRE_NET_MODULES])
-		which_output = '*'
+		which_output = '*' # * gives the whole output dictionary
 		if self.config.CONFIG_OPTIONS.get(P.KEY_PRE_NET_OUTPUTS if i < L else P.KEY_NET_OUTPUTS, None) is not None and (i if i < L else (i - L)) < len(self.config.CONFIG_OPTIONS[P.KEY_PRE_NET_OUTPUTS if i < L else P.KEY_NET_OUTPUTS]):
 			which_output = self.config.CONFIG_OPTIONS[P.KEY_PRE_NET_OUTPUTS if i < L else P.KEY_NET_OUTPUTS][i if i < L else (i - L)]
 		
@@ -127,15 +126,18 @@ class Experiment:
 				input_shape = self.config.CONFIG_OPTIONS.get(P.KEY_INPUT_SHAPE, None)
 				if i > 0: input_shape = utils.tens2shape(self.select_output(pre_net_list[i - 1].get_dummy_fmap(fwd=True), i - 1))
 				pre_net_list += [utils.retrieve(pre_net_modules[i])(config=self.config, input_shape=input_shape)]
-				self.logger.print_and_log("Searching for available saved model for pre-network " + str(i) + "...")
-				pre_net_state = utils.load_dict(os.path.normpath(pre_net_mdl_paths[i]))
-				if pre_net_state is not None:
-					self.logger.print_and_log(pre_net_list[i].load_state_dict(pre_net_state, strict=False))
-					self.logger.print_and_log("Pre-network model loaded!")
-				else: self.logger.print_and_log("No saved model found for pre-network, using pre-network initialized from scratch")
+				if pre_net_mdl_paths is not None and i < len(pre_net_mdl_paths) and pre_net_mdl_paths[i] is not None:
+					self.logger.print_and_log("Searching for available saved model for pre-network " + str(i) + "...")
+					pre_net_state = utils.load_dict(os.path.normpath(pre_net_mdl_paths[i]))
+					if pre_net_state is not None:
+						pre_net_list[i].load_state_dict(pre_net_state)
+						self.logger.print_and_log("Pre-network model loaded!")
+					else:
+						self.logger.print_and_log("No valid saved model found for pre-network")
+						raise FileNotFoundError("No valid saved model found for pre-network")
 				for p in pre_net_list[i].parameters(): p.requires_grad = False
 				pre_net_list[i].eval()
-		self.pre_net_list =  pre_net_list
+		self.pre_net_list = pre_net_list
 		
 		# Load network
 		input_shape = self.config.CONFIG_OPTIONS.get(P.KEY_INPUT_SHAPE, None)
@@ -152,15 +154,16 @@ class Experiment:
 				self.logger.print_and_log("Searching for available saved model for network " + str(i) + "...")
 				loaded_model = utils.load_dict(self.config.SAVED_MDL_PATHS[i] if self.config.MODE == P.MODE_TST else net_mdl_paths[i])
 				if loaded_model is not None:
-					self.logger.print_and_log(net_list[i].load_state_dict(loaded_model, strict=False))
-					net_list[i].reset_internal_sched_state()
+					net_list[i].load_state_dict(loaded_model)
 					self.logger.print_and_log("Model loaded!")
-				else: self.logger.print_and_log("No saved model found, using network initialized from scratch")
+				else:
+					self.logger.print_and_log("No valid saved model found")
+					raise FileNotFoundError("No valid saved model found")
 		self.net_list = net_list
 		
 		# Move all models to required device
-		for i in range(len(pre_net_list)): pre_net_list[i].to(P.DEVICE)
-		for i in range(len(net_list)): net_list[i].to(P.DEVICE)
+		for i in range(len(self.pre_net_list)): self.pre_net_list[i].to(P.DEVICE)
+		for i in range(len(self.net_list)): self.net_list[i].to(P.DEVICE)
 		
 		# Model loading completed
 		self.logger.print_and_log("Network ready!")
@@ -217,7 +220,7 @@ class Experiment:
 		curr_res = self.val_result_data[0][self.current_epoch]
 		self.logger.print_and_log("Best result (" + self.crit_managers[0].get_name() + ") so far: {} at epoch {}/{}".format(self.best_result, self.best_epoch, self.config.CONFIG_OPTIONS[P.KEY_NUM_EPOCHS]))
 		self.logger.print_and_log("Current result (" + self.crit_managers[0].get_name() + "): {}".format(curr_res))
-		# If validation result has improved update best model
+		# If validation result has improved update best result stats and best model
 		if utils.is_better(curr_res, self.best_result, P.HIGHER_IS_BETTER):
 			self.logger.print_and_log("Best result (" + self.crit_managers[0].get_name() + ") improved!")
 			# Update best result info
@@ -264,8 +267,20 @@ class Experiment:
 	
 	# Method containing schedule updating logic
 	def schedule(self):
-		if self.scheduler is not None: self.scheduler.step()
+		if self.scheduler is not None: self.schedule_optimizer()
 		if (self.current_epoch + 1) in self.eval_interval_schedule.keys(): self.eval_interval = self.eval_interval_schedule[self.current_epoch + 1]
+	
+	# Logic for the rl scheduling policy
+	def schedule_optimizer(self):
+		if isinstance(self.scheduler, torch.optim.lr_scheduler.ReduceLROnPlateau):
+			self.scheduler.step(self.val_result_data[0][self.current_epoch])
+		else:
+			self.scheduler.step()
+	
+	# Logic for gradient pre-conditioning to apply after gradients are computed but before the optimization step is
+	# taken (e.g. gradient norm clipping). By default, it does nothing.
+	def precond_grads(self):
+		pass
 	
 	# Perform model evaluation
 	def run_eval(self):
@@ -278,6 +293,9 @@ class Experiment:
 		for i in range(self.num_criteria):
 			utils.update_csv(self.config.ITER_ID, test_res[i], os.path.join(self.config.RESULT_BASE_FOLDER, self.crit_managers[i].get_name() + '.csv'), ci_levels=P.DEFAULT_CI_LEVELS)
 		self.logger.print_and_log("Saved!")
+		self.logger.print_and_log("")
+		self.logger.print_and_log("--------")
+		self.logger.print_and_log("")
 
 	# Perform model training
 	def run_train(self):
@@ -330,6 +348,8 @@ class Experiment:
 		for i in range(self.num_criteria): self.logger.print_and_log(self.crit_managers[i].get_name() + ": {}".format(self.val_result_data[i][self.best_epoch]))
 		for perc in self.convergence_epochs.keys(): self.logger.print_and_log("{}% convergence epoch: {}/{}".format(100 * perc, self.convergence_epochs[perc], self.config.CONFIG_OPTIONS[P.KEY_NUM_EPOCHS]))
 		self.logger.print_and_log("")
+		self.logger.print_and_log("--------")
+		self.logger.print_and_log("")
 	
 	# Print epoch progress information
 	def print_train_progress(self, start_epoch, current_epoch, total_epochs, elapsed_time):
@@ -368,11 +388,10 @@ class Experiment:
 		self.logger.print_and_log("Last validation epoch: {}/{}".format(self.last_eval_epoch, total_epochs) + ", with results: " + last_val_res)
 		self.logger.print_and_log("Best epoch so far: {}/{}".format(self.best_epoch, total_epochs) + ", with results: " + best_res)
 		
-		
-	
 	# Return best validation result so far
 	def get_best_result(self):
 		return self.best_result
+
 
 # Method for launching an experiment configuration
 def launch_experiment(config, checkpoint, restart):
@@ -402,7 +421,7 @@ def launch_experiment(config, checkpoint, restart):
 					utils.clear_checkpoints(checkpoint_folder=config.CHECKPOINT_FOLDER, latest_checkpoint=checkpoint_id, clearhist=P.CLEARHIST)
 				else:
 					# Checkpoint file not found. Let's warn the user and quit.
-					print("Checkpoint file " + checkpoint_file_path + " not found, please provide a valid checkpoint or start from scratch.")
+					print("Checkpoint file " + checkpoint_file_path + " not found or invalid, please provide a valid checkpoint or start from scratch.")
 					exit()
 	
 	# Initialize experiment

@@ -1,11 +1,11 @@
+import math
 import torch
 import torch.nn.functional as F
 
-import params as P
 from neurolab import utils
 
 
-# Apply unfold operation to x in order to prepare it to be processed against a sliding kernel whose shape
+# Apply unfold operation to input in order to prepare it to be processed against a sliding kernel whose shape
 # is passed as argument.
 def unfold_map2d(input, kernel_height, kernel_width):
 	# Before performing an operation between an x and a sliding kernel we need to unfold the x, i.e. the
@@ -31,7 +31,7 @@ def unfold_map2d(input, kernel_height, kernel_width):
 	)
 	return inp_unf
 
-# Custom vectorial function representing sum of an x with a sliding kernel, just like convolution is multiplication
+# Custom vectorial function representing sum of an input with a sliding kernel, just like convolution is multiplication
 # by a sliding kernel (as an analogy think convolution as a kernel_mult2d)
 def kernel_sum2d(input, kernel):
 	# In order to perform the sum with the sliding kernel we first need to unfold the x. The resulting tensor will
@@ -51,6 +51,11 @@ def kernel_sum2d(input, kernel):
 	return out
 
 
+# Euclidean distance between vectors
+def dist(x, y):
+	return (x.norm(p=2, dim=1).pow(2).view(-1, 1) + y.norm(p=2, dim=1).pow(2).view(1, -1) - 2 * x.matmul(y.t())) ** 0.5
+
+
 # A modified batchnorm layer that preserves per-feature relative variance information. This is done by multiplying the
 # output of an ordinary bn layer by a coefficient given by the ratio between the running variance and the aggregated
 # (average) running variances, so that variables will preserve their relative variance, while remaining normalized
@@ -62,67 +67,125 @@ def modified_bn(bn_layer, input):
 	return out
 
 
-# The identity function
-def identity(x):
-	return x
+# Compute product between input and sliding kernel
+def kernel_mult2d(x, w, bias=None):
+	if bias is None: bias = 0.
+	if isinstance(bias, torch.Tensor): bias = bias.view(1, -1, 1, 1)
+	return F.conv2d(x, w) + bias
 
-# Compute product between x and sliding kernel
-def kernel_mult2d(x, w, b=None):
-	return F.conv2d(x, w, b)
-
-# Projection of x on weight vectors
+# Projection of input on weight vectors
 def vector_proj2d(x, w, bias=None):
 	# Compute scalar product with sliding kernel
 	prod = kernel_mult2d(x, w)
 	# Divide by the norm of the weight vector to obtain the projection
 	norm_w = torch.norm(w.view(w.size(0), -1), p=2, dim=1).view(1, -1, 1, 1)
 	norm_w = norm_w + (norm_w == 0).float()  # Prevent divisions by zero
-	if bias is None: return prod / norm_w
-	return prod / norm_w + bias.view(1, -1, 1, 1)
+	if bias is None: bias = 0.
+	if isinstance(bias, torch.Tensor): bias = bias.view(1, -1, 1, 1)
+	return prod / norm_w + bias
 
-# Cosine similarity between an x map and a sliding kernel
+# Cosine similarity between input and a sliding kernel
 def cos_sim2d(x, w, bias=None):
 	proj = vector_proj2d(x, w)
 	# Divide by the norm of the x to obtain the cosine similarity
 	x_unf = unfold_map2d(x, w.size(2), w.size(3))
 	norm_x = torch.norm(x_unf, p=2, dim=4)
 	norm_x += (norm_x == 0).float()  # Prevent divisions by zero
-	if bias is None: return proj / norm_x
-	return (proj / norm_x + bias.view(1, -1, 1, 1)).clamp(-1, 1)
+	if bias is None: bias = 0.
+	if isinstance(bias, torch.Tensor): bias = bias.view(1, -1, 1, 1)
+	return proj / norm_x + bias
+
+# Angular similarity between input and a sliding kernel
+def ang_sim2d(x, w, bias=None):
+	s = 1 - 2 * torch.acos(cos_sim2d(x, w))/math.pi
+	if bias is None: bias = 0.
+	if isinstance(bias, torch.Tensor): bias = bias.view(1, -1, 1, 1)
+	return s + bias
 
 # Cosine similarity remapped to 0, 1
-def raised_cos2d(x, w, bias=None):
-	return (cos_sim2d(x, w, bias) + 1) / 2
+def raised_cos_sim2d(x, w, var=None):
+	nc = nc_raised_cos_sim
+	s = (cos_sim2d(x, w) + 1) / 2
+	act_var = None
+	if var is None: act_var = 1.
+	if var == 'nc': act_var = nc(w)
+	if isinstance(var, torch.Tensor): act_var = var.view(1, -1, 1, 1)
+	if act_var is None: raise ValueError("Invalid value for parameter var: " + str(var))
+	return s.pow(1/act_var)
+# Corresponding normalization condition functions for heuristic variance determination
+def nc_raised_cos_sim(w):
+	return -math.log( (1 + torch.cos( 1 / (w.size(0) ** (1 / (utils.shape2size(tuple(w[0].size()))))) )) / 2 )
 
-# Returns function that computes raised cosine power p
-def raised_cos2d_pow(p=2):
-	def raised_cos2d_pow_p(x, w, bias=None):
-		if bias is None: return raised_cos2d(x, w).pow(p)
-		return (raised_cos2d(x, w).pow(p) + bias.view(1, -1, 1, 1)).clamp(0, 1)
-	
-	return raised_cos2d_pow_p
+# Angular similarity remapped to 0, 1
+def raised_ang_sim2d(x, w, var=None):
+	nc = nc_raised_ang_sim
+	s = (ang_sim2d(x, w) + 1) / 2
+	act_var = None
+	if var is None: act_var = 1.
+	if var == 'nc': act_var = nc(w)
+	if isinstance(var, torch.Tensor): act_var = var.view(1, -1, 1, 1)
+	if act_var is None: raise ValueError("Invalid value for parameter var: " + str(var))
+	return s.pow(1/act_var)
+# Corresponding normalization condition functions for heuristic variance determination
+def nc_raised_ang_sim(w):
+	return -math.log( 1 - 1 / (w.size(0) ** (1 / (utils.shape2size(tuple(w[0].size()))))) )
 
-# Response of a gaussian activation function
-VAR_HEUR_NUM_DIMS = 'num_dims'
-VAR_HEUR_NORM_COND = 'norm_cond'
-VAR_HEUR_MEAN_DIST = 'mean_dist'
-def gauss(x, w, var=None): # var=VAR_HEUR_NUM_DIMS):
-	# Serialized version of distance computation using less memory
+# Get exponential similarity function e^(-f^p/var)
+def get_exp_sim(f, nc=None):
+	def exp_sim(x, w, var=None):
+		d = f(x, w)
+		act_var = None
+		if var is None: act_var = 1.
+		if var == 'nc':
+			if nc is None: raise ValueError("Normalization condition was invoked but no corresponding function was provided")
+			act_var = nc(w)
+		if isinstance(var, torch.Tensor): act_var = var.view(1, -1, 1, 1)
+		if act_var is None: raise ValueError("Invalid value for parameter var: " + str(var))
+		return torch.exp(-d/act_var)
+	return exp_sim
+# Distance functions for the exponential similarity
+def dist_euclid(x, w): # Euclidean distance for gauss-rbf similarity
 	x_unf = unfold_map2d(x, w.size(2), w.size(3))
-	d = torch.zeros(x_unf.size(0), w.size(0), x_unf.size(2), x_unf.size(3),
-	                device=x.device)  # batch, out-ch, height, width
-	for i in range(w.size(0) // P.HEBB_UPD_GRP + (1 if w.size(0) % P.HEBB_UPD_GRP != 0 else 0)):
-		start = i * P.HEBB_UPD_GRP
-		end = min((i + 1) * P.HEBB_UPD_GRP, w.size(0))
-		w_i = w[start:end, :, :, :]
-		w_i = w_i.view(1, w_i.size(0), 1, 1, -1)  # batch, out-ch, height, width, filter
-		d[:, start:end, :, :] = torch.norm(x_unf - w_i, p=2, dim=4)  # w_i broadcast over x_unf batch, height and width dims, x_unf broadcast over w out_ch dim
-	if var == VAR_HEUR_NUM_DIMS: return torch.exp(-d.pow(2) / (2 * utils.shape2size(tuple(w[0].size()))))  # heuristic: use number of dimensions as variance
-	if var == VAR_HEUR_NORM_COND: return torch.exp(-d.pow(2) / (2 * torch.norm(w.view(w.size(0), 1, -1) - w.view(1, w.size(0), -1), p=2, dim=2).max().pow(2)/(w.size(0)**(2/(utils.shape2size(tuple(w[0].size()))))))) # heuristic: normalization condition
-	if var == VAR_HEUR_MEAN_DIST: return torch.exp(-d.pow(2) / (2 * d.mean().pow(2))) # heuristic: use mean distance as variance
-	if var is None: return torch.exp(-d.pow(2) / 2)
-	return torch.exp(-d.pow(2) / (2 * var.view(1, -1, 1, 1)))
+	return dist(x_unf.view(-1, x.size(4)), w.view(w.size(0), -1))
+def dist_cos(x, w): # Cosine distance, which is equivalent to Euclidean distance between normalized vectors
+	cos_sim = cos_sim2d(x, w)
+	return (1 - cos_sim)/2
+def dist_ang(x, w): # Angular distance
+	cos_sim = cos_sim2d(x, w)
+	return torch.acos(cos_sim)/math.pi
+# Normalization condition functions for heuristic variance determination
+def nc_base(w):
+	return 1 / (w.size(0) ** (1 / (utils.shape2size(tuple(w[0].size())))))
+def nc_max_dist(w):
+	return dist(w.view(w.size(0), -1), w.view(w.size(0), -1)).max().detach().item() * nc_base(w)
+def nc_cos_dist(w):
+	return (1 - torch.cos(math.pi * nc_base(w)).detach().item())/2
+def nc_ang_dist(w):
+	return nc_base(w)
 
+# Get affine version of a similarity function
+def get_affine_sim(sim, b=0., s=1., p=1.):
+	def biased_sim(x, w, bias=None):
+		return sim(x, w, bias).pow(p) * s + b
+	return biased_sim
+
+# Get power version of a normcond function
+def get_pow_nc(nc, p=1.):
+	def pow_nc(w):
+		return nc(w) ** p
+	return pow_nc
+
+# The identity function
+def identity(x):
+	return x
+
+# Step nonlinearity
+def step(x):
+	return (x > 0).float()
+
+# Relu nonlinearity
+def relu(x):
+	return x.clamp(0)
 
 # Clamping nonlinearity
 def clamp(x):
@@ -130,7 +193,7 @@ def clamp(x):
 
 # Shrinkage nonlinearity
 def shrink(x):
-	return x - x.clamp(-1, 1)
+	return x - clamp(x)
 
 # Tanh nonlinearity
 def tanh(x):
@@ -138,21 +201,67 @@ def tanh(x):
 
 # Soft shrink nonlinearity
 def sshrink(x):
-	return x - x.tanh()
+	return x - tanh(x)
+
+# Rectified clamp nonlinearity
+def reclamp(x):
+	return clamp(x) * step(x)
+
+# Rectified shrink nonlinearity
+def reshrink(x):
+	return shrink(x) * step(x)
+
+# Rectified tanh nonlinearity
+def retanh(x):
+	return tanh(x) * step(x)
+
+# Rectified shoft shrink nonlinearity
+def resshrink(x):
+	return sshrink(x) * step(x)
+
+# Mixed shrink-clamp nonlinearity
+def shramp(x):
+	return shrink(x) * (1 - step(x)) + clamp(x) * step(x)
+
+# Mixed sshrink-tanh nonlinearity
+def sshranh(x):
+	return sshrink(x) * (1 - step(x)) + tanh(x) * step(x)
+
+# Gauss nonlinearity
+def gauss(x):
+	return torch.exp(-(x**2) / 2)
+
+# Get affine version of a nonlinearity
+def get_affine_act(nonlin, scale_in=1., scale_out=1., offset_in=0., offset_out=0., p=1):
+	def affine_act(x):
+		return scale_out * nonlin(x / scale_in + offset_in).pow(p) + offset_out
+	return affine_act
 
 
 # Competitive nonlinearity: k-WTA
-def kwta(x, k=1):
+def kwta(x, k=1, t=None):
+	if t is not None: x = x * t # Teacher signal is used to drive competition, if provided
 	#return (x == x.max(1, keepdim=True)[0]).float() # WTA
 	return (x >= x.kthvalue(x.size(1) - k + 1, dim=1, keepdim=True)[0]).float() # k-WTA
 
-# Competitive nonlinearity: soft-WTA
-def esoftwta(x, k=1):
-	return torch.softmax(x/k, dim=1)
+# Competitive nonlinearity: shifted soft-WTA
+def ssoftwta(x, k=0, t=None):
+	x = x + k
+	if t is not None: x = x * t # Teacher signal is used to drive competition, if provided
+	x_sum = x.sum(dim=1, keepdim=True)
+	x_sum = x_sum + (x_sum == 0).float() # Prevent divisions by 0
+	return x/x_sum
 
 # Competitive nonlinearity: polynomial soft-WTA
-def psoftwta(x, k=1):
-	norm_x = torch.norm(x, p=1/k, dim=1, keepdim=True)
-	norm_x = norm_x + (norm_x == 0).float()  # Prevent divisions by zero
-	return (x/norm_x).pow(1/k)
+def psoftwta(x, k=1, t=None):
+	return ssoftwta(x.pow(1/k), 0, t)
+
+# Competitive nonlinearity: exponential soft-WTA
+def esoftwta(x, k=1, t=None):
+	return ssoftwta(torch.exp(x/k), 0, t)
+
+# Competitive nonlinearity: threshold
+def threshcomp(x, k=0, t=None):
+	if t is not None: x = x * t # Teacher signal is used to drive competition, if provided
+	return (x + k > 0).float()
 

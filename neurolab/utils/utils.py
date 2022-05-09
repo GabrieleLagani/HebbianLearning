@@ -49,6 +49,8 @@ def is_converged(curr_res, best_res, perc, hb):
 # dictionary, it is possible to retrieve a specific element of the dictionary with the square bracket indexing notation.
 # NB: dictionary keys must always be strings.
 def retrieve(name):
+	if name is None: return None
+	
 	if '[' in name:
 		name, key = name.split('[', 1)
 		key = key.rsplit(']', 1)[0]
@@ -98,7 +100,7 @@ def load_dict(path):
 def obj2dict(obj):
 	try:
 		return obj.state_dict()
-	except:
+	except AttributeError:
 		return {'obj': obj} # Should I call utils.state_dict(obj) recursively if attribute has __dict__? No, so that the user can choose to save object by serialization by not providing obj.state_dict() method.
 
 # Loads a dictionary into an object. If the object has a load_state_dict method, this method is used to load the dictionary
@@ -109,19 +111,19 @@ def dict2obj(d, obj=None):
 	try:
 		obj.load_state_dict(d)
 		return obj
-	except:
+	except AttributeError:
 		return d['obj']
 
 # Helper function to implement state_dict method of some objects. Returns the state of the given object as a dictionary.
 # This is obtained by converting each attribute of the object to a dictionary element.
-def state_dict(obj):
+def default_state_dict(obj):
 	d = obj.__dict__.copy()
 	for k in d: d[k] = obj2dict(getattr(obj, k))
 	return d
 
 # Helper function to implement state_dict method of some objects. Sets the state of the given object from the dictionary.
 # This is obtained by setting an object attribute, for each dictionary key, to the corresponding dictionary element.
-def load_state_dict(obj, d):
+def default_load_state_dict(obj, d):
 	for k in d:
 		if hasattr(obj, k):
 			setattr(obj, k, dict2obj(d[k], getattr(obj, k)))
@@ -174,8 +176,7 @@ def plot_grid(tensor, path, num_rows=8, num_cols=12, bounds=None, norm_sigm=Fals
 
 # Function to get inverse of a weight matrix
 def inv_weight(w):
-	w_inv = w.view(w.size(0), -1).pinverse().t().view(w.size())
-	return w_inv
+	return w.view(w.size(0), -1).pinverse().t().view(w.size())
 
 # Add an entry containing the seed of a training iteration and the test accuracy of the corresponding model to a csv file
 def update_csv(iter_id, result, path, ci_levels=(0.9, 0.95, 0.98, 0.99, 0.995)):

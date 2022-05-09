@@ -15,6 +15,7 @@ class DiscAltMinHPManager(HPManager):
 		self.best_result = None
 		self.best_hyperparams = None
 		self.last_modified = 0
+		self.previously_tried = None
 	
 	def state_dict(self):
 		return {
@@ -35,17 +36,19 @@ class DiscAltMinHPManager(HPManager):
 		self.last_modified = d['last_modified']
 	
 	def get_next_hyperparams(self):
-		self.curr_index += 1
-		if self.curr_index >= len(self.hyperparams[list(self.hyperparams.keys())[self.curr_key]]):
+		self.curr_index += 1 # Go to the next value for the current parameter being iterated over
+		next_param = (self.curr_index >= len(self.hyperparams[list(self.hyperparams.keys())[self.curr_key]]))
+		if next_param: # Go to the next parameter
 			self.curr_index = 0
 			self.curr_key = (self.curr_key + 1) % len(self.hyperparams.keys())
 			self.last_modified += 1
 			if self.last_modified == len(self.hyperparams.keys()): return None
-		self.curr_hyperparams = self.best_hyperparams.copy() if self.best_hyperparams is not None else {k: self.hyperparams[k][0] for k in self.hyperparams.keys()}
 		k = list(self.hyperparams.keys())[self.curr_key]
+		if next_param: self.previously_tried = self.best_hyperparams[k] # Every time we go to a new param, there is one value that we already tried in the previous iterations
+		self.curr_hyperparams = self.best_hyperparams.copy() if self.best_hyperparams is not None else {k: self.hyperparams[k][0] for k in self.hyperparams.keys()}
 		self.curr_hyperparams[k] = self.hyperparams[k][self.curr_index]
 		# Check if we already tried this configuration and in this case skip to the next one
-		if self.best_hyperparams is not None and self.curr_hyperparams[k] == self.best_hyperparams[k]: return next(self)
+		if self.previously_tried is not None and self.curr_hyperparams[k] == self.previously_tried: return next(self)
 		# Return the specific hyperparameters
 		return self.curr_hyperparams
 	

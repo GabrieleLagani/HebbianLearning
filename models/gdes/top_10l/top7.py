@@ -28,15 +28,15 @@ class Net(Model):
 		# Here we define the layers of our network
 		
 		# Eightth convolutional layer
-		self.conv8 = nn.Conv2d(self.get_input_shape()[0], 512, 3)  # 384 x channels, 512 output channels, 3x3 convolutions
+		self.conv8 = nn.Conv2d(self.get_input_shape()[0], 512, 3)  # 384 input channels, 512 output channels, 3x3 convolutions
 		self.bn8 = nn.BatchNorm2d(512) # Batch Norm layer
 		
 		self.CONV_OUTPUT_SIZE = utils.shape2size(utils.tens2shape(self.get_dummy_fmap()[self.CONV_OUTPUT]))
 		
 		# FC Layers
-		self.fc9 = nn.Linear(self.CONV_OUTPUT_SIZE, 4096)  # conv_output_size-dimensional x, 4096-dimensional output
+		self.fc9 = nn.Linear(self.CONV_OUTPUT_SIZE, 4096)  # conv_output_size-dimensional input, 4096-dimensional output
 		self.bn9 = nn.BatchNorm1d(4096)  # Batch Norm layer
-		self.fc10 = nn.Linear(4096, self.NUM_CLASSES) # 4096-dimensional x, NUM_CLASSES-dimensional output (one per class)
+		self.fc10 = nn.Linear(4096, self.NUM_CLASSES) # 4096-dimensional input, NUM_CLASSES-dimensional output (one per class)
 	
 	def get_conv_output(self, x):
 		# Layer 6: Convolutional + ReLU activations + Batch Norm

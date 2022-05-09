@@ -21,17 +21,18 @@ class Net(Model):
 		super(Net, self).__init__(config, input_shape)
 		
 		self.NUM_CLASSES = P.GLB_PARAMS[P.KEY_DATASET_METADATA][P.KEY_DS_NUM_CLASSES]
+		self.DROPOUT_P = config.CONFIG_OPTIONS.get(P.KEY_DROPOUT_P, 0.5)
 		
 		# Here we define the layers of our network
 		
 		# First convolutional layer
-		self.conv1 = nn.Conv2d(3, 96, 5) # 3 x channels, 96 output channels, 5x5 convolutions
+		self.conv1 = nn.Conv2d(3, 96, 5) # 3 input channels, 96 output channels, 5x5 convolutions
 		self.bn1 = nn.BatchNorm2d(96) # Batch Norm layer
 		
 		self.CONV_OUTPUT_SIZE = utils.shape2size(utils.tens2shape(self.get_dummy_fmap()[self.CONV_OUTPUT]))
 		
 		# FC Layers
-		self.fc2 = nn.Linear(self.CONV_OUTPUT_SIZE, self.NUM_CLASSES) # conv_output_shape-dimensional x, 10-dimensional output (one per class)
+		self.fc2 = nn.Linear(self.CONV_OUTPUT_SIZE, self.NUM_CLASSES) # conv_output_shape-dimensional input, 10-dimensional output (one per class)
 	
 	def get_conv_output(self, x):
 		# Layer 1: Convolutional + ReLU activations + 2x2 Max Pooling + Batch Norm

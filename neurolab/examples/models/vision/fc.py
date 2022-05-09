@@ -19,7 +19,7 @@ class Net(Model):
 		self.DROPOUT_P = config.CONFIG_OPTIONS.get(P.KEY_DROPOUT_P, 0.5)
 		
 		# FC Layers
-		self.fc = nn.Linear(self.INPUT_SIZE, self.NUM_CLASSES) # input_size-dimensional x, NUM_CLASSES-dimensional output (one per class)
+		self.fc = nn.Linear(self.INPUT_SIZE, self.NUM_CLASSES) # input_size-dimensional input, NUM_CLASSES-dimensional output (one per class)
 	
 	# Here we define the flow of information through the network
 	def forward(self, x):

@@ -46,30 +46,30 @@ class Net(Model):
 		# Here we define the layers of our network
 		
 		# Third convolutional layer
-		self.conv3 = nn.Conv2d(self.get_input_shape()[0], 192, 3)  # 128 x channels, 192 output channels, 3x3 convolutions
+		self.conv3 = nn.Conv2d(self.get_input_shape()[0], 192, 3)  # 128 input channels, 192 output channels, 3x3 convolutions
 		self.bn3 = nn.BatchNorm2d(192) # Batch Norm layer
 		# Fourth convolutional layer
-		self.conv4 = nn.Conv2d(192, 192, 3)  # 192 x channels, 192 output channels, 3x3 convolutions
+		self.conv4 = nn.Conv2d(192, 192, 3)  # 192 input channels, 192 output channels, 3x3 convolutions
 		self.bn4 = nn.BatchNorm2d(192) # Batch Norm layer
 		# Fifth convolutional layer
-		self.conv5 = nn.Conv2d(192, 256, 3)  # 192 x channels, 256 output channels, 3x3 convolutions
+		self.conv5 = nn.Conv2d(192, 256, 3)  # 192 input channels, 256 output channels, 3x3 convolutions
 		self.bn5 = nn.BatchNorm2d(256) # Batch Norm layer
 		# Sixth convolutional layer
-		self.conv6 = nn.Conv2d(256, 256, 3)  # 256 x channels, 256 output channels, 3x3 convolutions
+		self.conv6 = nn.Conv2d(256, 256, 3)  # 256 input channels, 256 output channels, 3x3 convolutions
 		self.bn6 = nn.BatchNorm2d(256) # Batch Norm layer
 		# Seventh convolutional layer
-		self.conv7 = nn.Conv2d(256, 384, 3)  # 256 x channels, 384 output channels, 3x3 convolutions
+		self.conv7 = nn.Conv2d(256, 384, 3)  # 256 input channels, 384 output channels, 3x3 convolutions
 		self.bn7 = nn.BatchNorm2d(384) # Batch Norm layer
 		# Eightth convolutional layer
-		self.conv8 = nn.Conv2d(384, 512, 3)  # 384 x channels, 512 output channels, 3x3 convolutions
+		self.conv8 = nn.Conv2d(384, 512, 3)  # 384 input channels, 512 output channels, 3x3 convolutions
 		self.bn8 = nn.BatchNorm2d(512) # Batch Norm layer
 		
 		self.CONV_OUTPUT_SIZE = utils.shape2size(utils.tens2shape(self.get_dummy_fmap()[self.CONV_OUTPUT]))
 		
 		# FC Layers
-		self.fc9 = nn.Linear(self.CONV_OUTPUT_SIZE, 4096)  # conv_output_size-dimensional x, 4096-dimensional output
+		self.fc9 = nn.Linear(self.CONV_OUTPUT_SIZE, 4096)  # conv_output_size-dimensional input, 4096-dimensional output
 		self.bn9 = nn.BatchNorm1d(4096)  # Batch Norm layer
-		self.fc10 = nn.Linear(4096, self.NUM_CLASSES) # 4096-dimensional x, NUM_CLASSES-dimensional output (one per class)
+		self.fc10 = nn.Linear(4096, self.NUM_CLASSES) # 4096-dimensional input, NUM_CLASSES-dimensional output (one per class)
 	
 	def get_conv_output(self, x):
 		# Layer 3: Convolutional + ReLU activations + 2x2 Max Pooling + Batch Norm

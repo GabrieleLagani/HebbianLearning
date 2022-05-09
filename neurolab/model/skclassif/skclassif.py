@@ -27,6 +27,7 @@ class SkClassif(Model):
 		self.X = []
 		self.X_transformed = []
 		self.y = []
+		self.normalize = config.CONFIG_OPTIONS.get(P.KEY_SKCLF_NORM, False)
 	
 	def state_dict(self):
 		d = super(SkClassif, self).state_dict()
@@ -43,25 +44,28 @@ class SkClassif(Model):
 		self.clf_fitted = state_dict.pop('clf_fitted')
 		super(SkClassif, self).load_state_dict(state_dict, strict)
 	
-	# Returns classifier predictions for a given x batch
-	def compute_output(self, x):
-		return utils.dense2onehot(torch.tensor(self.clf.predict(self.nystroem.transform(x.view(x.size(0), -1).tolist())), device=P.DEVICE), self.NUM_CLASSES)
+	def norm_if_needed(self, x):
+		if not self.normalize: return x
+		norm_x = x.norm(p=2, dim=1, keepdim=True)
+		norm_x += (norm_x == 0).float()  # Prevent divisions by zero
+		return x / norm_x
 	
 	# Here we define the flow of information through the network
 	def forward(self, x):
-		out = {}
+		x = self.norm_if_needed(x.view(x.size(0), -1)).tolist() # Normalize input if needed
 		
+		# Here we append inputs to training pipeline if we are in training mode
 		if self.training:
 			if not self.clf_fitted:
 				# Here we use just the first NUM_SAMPLES samples to do a Nystroem approximation, because they are already
 				# a random subset of the dataset. This allows to save memory by avoiding to store the whole dataset.
 				if not self.nystroem_fitted:
-					self.X += x.view(x.size(0), -1).tolist()
+					self.X += x
 					if len(self.X) >= self.N_COMPONENTS:
-						self.X_transformed = self.nystroem.fit_transform(self.X).tolist()
+						self.X_transformed = self.norm_if_needed(torch.tensor(self.nystroem.fit_transform(self.X), device=P.DEVICE)).tolist()
 						self.nystroem_fitted = True
 						self.X = []
-				else: self.X_transformed += self.nystroem.transform(x.view(x.size(0), -1).tolist()).tolist()
+				else: self.X_transformed += self.norm_if_needed(torch.tensor(self.nystroem.transform(x), device=P.DEVICE)).tolist()
 				
 				# Here we fit the actual classifier
 				if len(self.X_transformed) >= self.NUM_SAMPLES:
@@ -70,10 +74,24 @@ class SkClassif(Model):
 					self.X_transformed = []
 					self.y = []
 		
-		clf_out = self.compute_output(x) if self.clf_fitted else torch.rand((x.size(0), self.NUM_CLASSES), device=P.DEVICE)
+		return self.compute_output(x)
+	
+	# Process incput batch and compute output dictionary
+	def compute_output(self, x):
+		out = {}
+		
+		clf_out = self.get_clf_pred(x)
+		
 		out[self.CLF] = clf_out
 		out[self.CLASS_SCORES] = {P.KEY_CLASS_SCORES: clf_out}
+		
 		return out
 	
+	# Returns classifier predictions for a given input batch
+	def get_clf_pred(self, x):
+		if not self.clf_fitted: return torch.rand((len(x), self.NUM_CLASSES), device=P.DEVICE)
+		return utils.dense2onehot(torch.tensor(self.get_clf_pred(self.nystroem.transform(x)), device=P.DEVICE), self.NUM_CLASSES)
+		
+	# Set label info for current batch
 	def set_teacher_signal(self, y):
 		if y is not None and len(self.y) < self.NUM_SAMPLES and self.training and not self.clf_fitted: self.y += y.tolist()

@@ -46,33 +46,34 @@ class Net(Model):
 		self.DROPOUT_P = config.CONFIG_OPTIONS.get(P.KEY_DROPOUT_P, 0.5)
 		self.NUM_LATENT_VARS = config.CONFIG_OPTIONS.get(PP.KEY_VAE_NUM_LATENT_VARS, 256)
 		self.ELBO_BETA = config.CONFIG_OPTIONS.get(P.KEY_ELBO_BETA, 1.)
-		self.ALPHA = config.CONFIG_OPTIONS.get(P.KEY_ALPHA, 1.)
+		self.ALPHA_L = config.CONFIG_OPTIONS.get(P.KEY_ALPHA_L, 1.)
+		self.ALPHA_G = config.CONFIG_OPTIONS.get(P.KEY_ALPHA_G, 0.)
 		
 		# Here we define the layers of our network and the variables to store internal gradients
 		
 		# First convolutional layer
-		self.conv1 = nn.Conv2d(3, 96, 5) # 3 x channels, 96 output channels, 5x5 convolutions
+		self.conv1 = nn.Conv2d(3, 96, 5) # 3 input chennels, 96 output channels, 5x5 convolutions
 		self.bn1 = nn.BatchNorm2d(96) # Batch Norm layer
 		self.conv1_delta_w = torch.zeros_like(self.conv1.weight)
 		self.conv1_delta_bias = torch.zeros_like(self.conv1.bias)
 		self.bn1_delta_w = torch.zeros_like(self.bn1.weight)
 		self.bn1_delta_bias = torch.zeros_like(self.bn1.bias)
 		# Second convolutional layer
-		self.conv2 = nn.Conv2d(96, 128, 3) # 96 x channels, 128 output channels, 3x3 convolutions
+		self.conv2 = nn.Conv2d(96, 128, 3) # 96 input chennels, 128 output channels, 3x3 convolutions
 		self.bn2 = nn.BatchNorm2d(128) # Batch Norm layer
 		self.conv2_delta_w = torch.zeros_like(self.conv2.weight)
 		self.conv2_delta_bias = torch.zeros_like(self.conv2.bias)
 		self.bn2_delta_w = torch.zeros_like(self.bn2.weight)
 		self.bn2_delta_bias = torch.zeros_like(self.bn2.bias)
 		# Third convolutional layer
-		self.conv3 = nn.Conv2d(128, 192, 3)  # 128 x channels, 192 output channels, 3x3 convolutions
+		self.conv3 = nn.Conv2d(128, 192, 3)  # 128 input chennels, 192 output channels, 3x3 convolutions
 		self.bn3 = nn.BatchNorm2d(192) # Batch Norm layer
 		self.conv3_delta_w = torch.zeros_like(self.conv3.weight)
 		self.conv3_delta_bias = torch.zeros_like(self.conv3.bias)
 		self.bn3_delta_w = torch.zeros_like(self.bn3.weight)
 		self.bn3_delta_bias = torch.zeros_like(self.bn3.bias)
 		# Fourth convolutional layer
-		self.conv4 = nn.Conv2d(192, 256, 3)  # 192 x channels, 256 output channels, 3x3 convolutions
+		self.conv4 = nn.Conv2d(192, 256, 3)  # 192 input chennels, 256 output channels, 3x3 convolutions
 		self.bn4 = nn.BatchNorm2d(256) # Batch Norm layer
 		self.conv4_delta_w = torch.zeros_like(self.conv4.weight)
 		self.conv4_delta_bias = torch.zeros_like(self.conv4.bias)
@@ -84,86 +85,86 @@ class Net(Model):
 		self.CONV_OUTPUT_SIZE = self.OUTPUT_FMAP_SIZE[self.CONV_OUTPUT]
 		
 		# FC Layers
-		self.fc5 = nn.Linear(self.CONV_OUTPUT_SIZE, 4096) # conv_output_size-dimensional x, 4096-dimensional output
+		self.fc5 = nn.Linear(self.CONV_OUTPUT_SIZE, 4096) # conv_output_size-dimensional input, 4096-dimensional output
 		self.bn5 = nn.BatchNorm1d(4096) # Batch Norm layer
 		self.fc5_delta_w = torch.zeros_like(self.fc5.weight)
 		self.fc5_delta_bias = torch.zeros_like(self.fc5.bias)
 		self.bn5_delta_w = torch.zeros_like(self.bn5.weight)
 		self.bn5_delta_bias = torch.zeros_like(self.bn5.bias)
-		self.fc6 = nn.Linear(4096, self.NUM_CLASSES) # 4096-dimensional x, NUM_CLASSES-dimensional output (one per class)
+		self.fc6 = nn.Linear(4096, self.NUM_CLASSES) # 4096-dimensional input, NUM_CLASSES-dimensional output (one per class)
 		
 		# Latent variable mapping layers
-		self.fc_mu1 = nn.Linear(self.OUTPUT_FMAP_SIZE[self.BN1], self.NUM_LATENT_VARS)  # bn1_output_size-dimensional x, NUM_LATENT_VARS-dimensional output
-		self.fc_var1 = nn.Linear(self.OUTPUT_FMAP_SIZE[self.BN1], self.NUM_LATENT_VARS)  # bn1_output_size-dimensional x, NUM_LATENT_VARS-dimensional output
+		self.fc_mu1 = nn.Linear(self.OUTPUT_FMAP_SIZE[self.BN1], self.NUM_LATENT_VARS)  # bn1_output_size-dimensional input, NUM_LATENT_VARS-dimensional output
+		self.fc_var1 = nn.Linear(self.OUTPUT_FMAP_SIZE[self.BN1], self.NUM_LATENT_VARS)  # bn1_output_size-dimensional input, NUM_LATENT_VARS-dimensional output
 		self.fc_mu1_delta_w = torch.zeros_like(self.fc_mu1.weight)
 		self.fc_mu1_delta_bias = torch.zeros_like(self.fc_mu1.bias)
 		self.fc_var1_delta_w = torch.zeros_like(self.fc_var1.weight)
 		self.fc_var1_delta_bias = torch.zeros_like(self.fc_var1.bias)
-		self.fc_mu2 = nn.Linear(self.OUTPUT_FMAP_SIZE[self.BN2], self.NUM_LATENT_VARS)  # bn2_output_size-dimensional x, NUM_LATENT_VARS-dimensional output
-		self.fc_var2 = nn.Linear(self.OUTPUT_FMAP_SIZE[self.BN2], self.NUM_LATENT_VARS)  # bn2_output_size-dimensional x, NUM_LATENT_VARS-dimensional output
+		self.fc_mu2 = nn.Linear(self.OUTPUT_FMAP_SIZE[self.BN2], self.NUM_LATENT_VARS)  # bn2_output_size-dimensional input, NUM_LATENT_VARS-dimensional output
+		self.fc_var2 = nn.Linear(self.OUTPUT_FMAP_SIZE[self.BN2], self.NUM_LATENT_VARS)  # bn2_output_size-dimensional input, NUM_LATENT_VARS-dimensional output
 		self.fc_mu2_delta_w = torch.zeros_like(self.fc_mu2.weight)
 		self.fc_mu2_delta_bias = torch.zeros_like(self.fc_mu2.bias)
 		self.fc_var2_delta_w = torch.zeros_like(self.fc_var2.weight)
 		self.fc_var2_delta_bias = torch.zeros_like(self.fc_var2.bias)
-		self.fc_mu3 = nn.Linear(self.OUTPUT_FMAP_SIZE[self.BN3], self.NUM_LATENT_VARS)  # bn3_output_size-dimensional x, NUM_LATENT_VARS-dimensional output
-		self.fc_var3 = nn.Linear(self.OUTPUT_FMAP_SIZE[self.BN3], self.NUM_LATENT_VARS)  # bn3_output_size-dimensional x, NUM_LATENT_VARS-dimensional output
+		self.fc_mu3 = nn.Linear(self.OUTPUT_FMAP_SIZE[self.BN3], self.NUM_LATENT_VARS)  # bn3_output_size-dimensional input, NUM_LATENT_VARS-dimensional output
+		self.fc_var3 = nn.Linear(self.OUTPUT_FMAP_SIZE[self.BN3], self.NUM_LATENT_VARS)  # bn3_output_size-dimensional input, NUM_LATENT_VARS-dimensional output
 		self.fc_mu3_delta_w = torch.zeros_like(self.fc_mu3.weight)
 		self.fc_mu3_delta_bias = torch.zeros_like(self.fc_mu3.bias)
 		self.fc_var3_delta_w = torch.zeros_like(self.fc_var3.weight)
 		self.fc_var3_delta_bias = torch.zeros_like(self.fc_var3.bias)
-		self.fc_mu4 = nn.Linear(self.OUTPUT_FMAP_SIZE[self.BN4], self.NUM_LATENT_VARS)  # bn4_output_size-dimensional x, NUM_LATENT_VARS-dimensional output
-		self.fc_var4 = nn.Linear(self.OUTPUT_FMAP_SIZE[self.BN4], self.NUM_LATENT_VARS)  # bn4_output_size-dimensional x, NUM_LATENT_VARS-dimensional output
+		self.fc_mu4 = nn.Linear(self.OUTPUT_FMAP_SIZE[self.BN4], self.NUM_LATENT_VARS)  # bn4_output_size-dimensional input, NUM_LATENT_VARS-dimensional output
+		self.fc_var4 = nn.Linear(self.OUTPUT_FMAP_SIZE[self.BN4], self.NUM_LATENT_VARS)  # bn4_output_size-dimensional input, NUM_LATENT_VARS-dimensional output
 		self.fc_mu4_delta_w = torch.zeros_like(self.fc_mu4.weight)
 		self.fc_mu4_delta_bias = torch.zeros_like(self.fc_mu4.bias)
 		self.fc_var4_delta_w = torch.zeros_like(self.fc_var4.weight)
 		self.fc_var4_delta_bias = torch.zeros_like(self.fc_var4.bias)
-		self.fc_mu5 = nn.Linear(4096, self.NUM_LATENT_VARS)  # 4096-dimensional x, NUM_LATENT_VARS-dimensional output
-		self.fc_var5 = nn.Linear(4096, self.NUM_LATENT_VARS)  # 4096-dimensional x, NUM_LATENT_VARS-dimensional output
+		self.fc_mu5 = nn.Linear(4096, self.NUM_LATENT_VARS)  # 4096-dimensional input, NUM_LATENT_VARS-dimensional output
+		self.fc_var5 = nn.Linear(4096, self.NUM_LATENT_VARS)  # 4096-dimensional input, NUM_LATENT_VARS-dimensional output
 		self.fc_mu5_delta_w = torch.zeros_like(self.fc_mu5.weight)
 		self.fc_mu5_delta_bias = torch.zeros_like(self.fc_mu5.bias)
 		self.fc_var5_delta_w = torch.zeros_like(self.fc_var5.weight)
 		self.fc_var5_delta_bias = torch.zeros_like(self.fc_var5.bias)
 		
 		# Decoding Layers
-		self.dec_fc0 = nn.Linear(self.NUM_LATENT_VARS, 4096)  # NUM_LATENT_VARS-dimensional x, 4096-dimensional output
+		self.dec_fc0 = nn.Linear(self.NUM_LATENT_VARS, 4096)  # NUM_LATENT_VARS-dimensional input, 4096-dimensional output
 		self.dec_bn0 = nn.BatchNorm1d(4096)  # Batch Norm layer
-		self.dec_fc1 = nn.Linear(4096, self.CONV_OUTPUT_SIZE)  # 4096-dimensional x, CONV_OUTPUT_SIZE-dimensional output
+		self.dec_fc1 = nn.Linear(4096, self.CONV_OUTPUT_SIZE)  # 4096-dimensional input, CONV_OUTPUT_SIZE-dimensional output
 		self.dec_fc0_delta_w = torch.zeros_like(self.dec_fc0.weight)
 		self.dec_fc0_delta_bias = torch.zeros_like(self.dec_fc0.bias)
 		self.dec_bn0_delta_w = torch.zeros_like(self.dec_bn0.weight)
 		self.dec_bn0_delta_bias = torch.zeros_like(self.dec_bn0.bias)
 		self.dec_fc1_delta_w = torch.zeros_like(self.dec_fc1.weight)
 		self.dec_fc1_delta_bias = torch.zeros_like(self.dec_fc1.bias)
-		self.dec_fc2 = nn.Linear(self.NUM_LATENT_VARS, self.OUTPUT_FMAP_SIZE[self.BN4])  # NUM_LATENT_VARS-dimensional x, bn4_output_size-dimensional output
+		self.dec_fc2 = nn.Linear(self.NUM_LATENT_VARS, self.OUTPUT_FMAP_SIZE[self.BN4])  # NUM_LATENT_VARS-dimensional input, bn4_output_size-dimensional output
 		self.dec_bn2 = nn.BatchNorm2d(256)  # Batch Norm layer
-		self.dec_conv2 = nn.ConvTranspose2d(256, 192, 3) # 256 x channels, 192 output channels, 3x3 transpose convolutions
+		self.dec_conv2 = nn.ConvTranspose2d(256, 192, 3) # 256 input chennels, 192 output channels, 3x3 transpose convolutions
 		self.dec_fc2_delta_w = torch.zeros_like(self.dec_fc2.weight)
 		self.dec_fc2_delta_bias = torch.zeros_like(self.dec_fc2.bias)
 		self.dec_bn2_delta_w = torch.zeros_like(self.dec_bn2.weight)
 		self.dec_bn2_delta_bias = torch.zeros_like(self.dec_bn2.bias)
 		self.dec_conv2_delta_w = torch.zeros_like(self.dec_conv2.weight)
 		self.dec_conv2_delta_bias = torch.zeros_like(self.dec_conv2.bias)
-		self.dec_fc3 = nn.Linear(self.NUM_LATENT_VARS, self.OUTPUT_FMAP_SIZE[self.BN3])  # NUM_LATENT_VARS-dimensional x, bn3_output_size-dimensional output
+		self.dec_fc3 = nn.Linear(self.NUM_LATENT_VARS, self.OUTPUT_FMAP_SIZE[self.BN3])  # NUM_LATENT_VARS-dimensional input, bn3_output_size-dimensional output
 		self.dec_bn3 = nn.BatchNorm2d(192)  # Batch Norm layer
-		self.dec_conv3 = nn.ConvTranspose2d(192, 128, 3) # 192 x channels, 128 output channels, 3x3 transpose convolutions
+		self.dec_conv3 = nn.ConvTranspose2d(192, 128, 3) # 192 input chennels, 128 output channels, 3x3 transpose convolutions
 		self.dec_fc3_delta_w = torch.zeros_like(self.dec_fc3.weight)
 		self.dec_fc3_delta_bias = torch.zeros_like(self.dec_fc3.bias)
 		self.dec_bn3_delta_w = torch.zeros_like(self.dec_bn3.weight)
 		self.dec_bn3_delta_bias = torch.zeros_like(self.dec_bn3.bias)
 		self.dec_conv3_delta_w = torch.zeros_like(self.dec_conv3.weight)
 		self.dec_conv3_delta_bias = torch.zeros_like(self.dec_conv3.bias)
-		self.dec_fc4 = nn.Linear(self.NUM_LATENT_VARS, self.OUTPUT_FMAP_SIZE[self.BN2])  # NUM_LATENT_VARS-dimensional x, bn2_output_size-dimensional output
+		self.dec_fc4 = nn.Linear(self.NUM_LATENT_VARS, self.OUTPUT_FMAP_SIZE[self.BN2])  # NUM_LATENT_VARS-dimensional input, bn2_output_size-dimensional output
 		self.dec_bn4 = nn.BatchNorm2d(128)  # Batch Norm layer
-		self.dec_conv4 = nn.ConvTranspose2d(128, 96, 3) # 128 x channels, 96 output channels, 3x3 transpose convolutions
+		self.dec_conv4 = nn.ConvTranspose2d(128, 96, 3) # 128 input chennels, 96 output channels, 3x3 transpose convolutions
 		self.dec_fc4_delta_w = torch.zeros_like(self.dec_fc4.weight)
 		self.dec_fc4_delta_bias = torch.zeros_like(self.dec_fc4.bias)
 		self.dec_bn4_delta_w = torch.zeros_like(self.dec_bn4.weight)
 		self.dec_bn4_delta_bias = torch.zeros_like(self.dec_bn4.bias)
 		self.dec_conv4_delta_w = torch.zeros_like(self.dec_conv4.weight)
 		self.dec_conv4_delta_bias = torch.zeros_like(self.dec_conv4.bias)
-		self.dec_fc5 = nn.Linear(self.NUM_LATENT_VARS, self.OUTPUT_FMAP_SIZE[self.BN1])  # NUM_LATENT_VARS-dimensional x, bn1_output_size-dimensional output
+		self.dec_fc5 = nn.Linear(self.NUM_LATENT_VARS, self.OUTPUT_FMAP_SIZE[self.BN1])  # NUM_LATENT_VARS-dimensional input, bn1_output_size-dimensional output
 		self.dec_bn5 = nn.BatchNorm2d(96)  # Batch Norm layer
-		self.dec_conv5 = nn.ConvTranspose2d(96, 3, 5) # 96 x channels, 3 output channels, 5x5 transpose convolutions
+		self.dec_conv5 = nn.ConvTranspose2d(96, 3, 5) # 96 input chennels, 3 output channels, 5x5 transpose convolutions
 		self.dec_fc5_delta_w = torch.zeros_like(self.dec_fc5.weight)
 		self.dec_fc5_delta_bias = torch.zeros_like(self.dec_fc5.bias)
 		self.dec_bn5_delta_w = torch.zeros_like(self.dec_bn5.weight)
@@ -264,7 +265,7 @@ class Net(Model):
 		eps5 = torch.randn_like(std5)
 		z5 =  eps5 * std5 + mu5
 		
-		if self.training and self.ALPHA != 0: # Local updates are enabled
+		if self.training and self.ALPHA_L != 0: # Local updates are enabled
 			# Decoding layers: FC + Batch Norm + FC or transpose convolutions
 			dec_fc0_out = self.dec_fc0(z5)
 			dec_relu0_out = F.relu(dec_fc0_out)
@@ -419,78 +420,79 @@ class Net(Model):
 		return out
 	
 	def local_updates(self):
-		if self.ALPHA != 0: # Local updates are enabled
-			self.fc5.weight.grad = self.ALPHA * self.fc5_delta_w + (1 - self.ALPHA) * self.fc5.weight.grad
-			self.fc5.weight.bias = self.ALPHA * self.fc5_delta_bias + (1 - self.ALPHA) * self.fc5.bias.grad
-			self.bn5.weight.grad = self.ALPHA * self.bn5_delta_w + (1 - self.ALPHA) * self.bn5.weight.grad
-			self.bn5.weight.bias = self.ALPHA * self.bn5_delta_bias + (1 - self.ALPHA) * self.bn5.bias.grad
-			self.fc_mu5.weight.grad = self.ALPHA * self.fc_mu5_delta_w + (1 - self.ALPHA) * self.fc_mu5.weight.grad
-			self.fc_mu5.weight.bias = self.ALPHA * self.fc_mu5_delta_bias + (1 - self.ALPHA) * self.fc_mu5.bias.grad
-			self.fc_var5.weight.grad = self.ALPHA * self.fc_var5_delta_w + (1 - self.ALPHA) * self.fc_var5.weight.grad
-			self.fc_var5.weight.bias = self.ALPHA * self.fc_var5_delta_bias + (1 - self.ALPHA) * self.fc_var5.bias.grad
-			self.dec_fc0.weight.grad = self.ALPHA * self.dec_fc0_delta_w + (1 - self.ALPHA) * self.dec_fc0.weight.grad
-			self.dec_fc0.weight.bias = self.ALPHA * self.dec_fc0_delta_bias + (1 - self.ALPHA) * self.dec_fc0.bias.grad
-			self.dec_bn0.weight.grad = self.ALPHA * self.dec_bn0_delta_w + (1 - self.ALPHA) * self.dec_bn0.weight.grad
-			self.dec_bn0.weight.bias = self.ALPHA * self.dec_bn0_delta_bias + (1 - self.ALPHA) * self.dec_bn0.bias.grad
-			self.dec_fc1.weight.grad = self.ALPHA * self.dec_fc1_delta_w + (1 - self.ALPHA) * self.dec_fc1.weight.grad
-			self.dec_fc1.weight.bias = self.ALPHA * self.dec_fc1_delta_bias + (1 - self.ALPHA) * self.dec_fc1.bias.grad
+		self.fc5.weight.grad = self.ALPHA_L * self.fc5_delta_w + self.ALPHA_G * (self.fc5.weight.grad if self.fc5.weight.grad is not None else 0.)
+		self.fc5.weight.bias = self.ALPHA_L * self.fc5_delta_bias + self.ALPHA_G * (self.fc5.bias.grad if self.fc5.bias.grad is not None else 0.)
+		self.bn5.weight.grad = self.ALPHA_L * self.bn5_delta_w + self.ALPHA_G * (self.bn5.weight.grad if self.bn5.weight.grad is not None else 0.)
+		self.bn5.weight.bias = self.ALPHA_L * self.bn5_delta_bias + self.ALPHA_G * (self.bn5.bias.grad if self.bn5.bias.grad is not None else 0.)
+		self.fc_mu5.weight.grad = self.ALPHA_L * self.fc_mu5_delta_w + self.ALPHA_G * (self.fc_mu5.weight.grad if self.fc_mu5.weight.grad is not None else 0.)
+		self.fc_mu5.weight.bias = self.ALPHA_L * self.fc_mu5_delta_bias + self.ALPHA_G * (self.fc_mu5.bias.grad if self.fc_mu5.bias.grad is not None else 0.)
+		self.fc_var5.weight.grad = self.ALPHA_L * self.fc_var5_delta_w + self.ALPHA_G * (self.fc_var5.weight.grad if self.fc_var5.weight.grad is not None else 0.)
+		self.fc_var5.weight.bias = self.ALPHA_L * self.fc_var5_delta_bias + self.ALPHA_G * (self.fc_var5.bias.grad if self.fc_var5.bias.grad is not None else 0.)
+		self.dec_fc0.weight.grad = self.ALPHA_L * self.dec_fc0_delta_w + self.ALPHA_G * (self.dec_fc0.weight.grad if self.dec_fc0.weight.grad is not None else 0.)
+		self.dec_fc0.weight.bias = self.ALPHA_L * self.dec_fc0_delta_bias + self.ALPHA_G * (self.dec_fc0.bias.grad if self.dec_fc0.bias.grad is not None else 0.)
+		self.dec_bn0.weight.grad = self.ALPHA_L * self.dec_bn0_delta_w + self.ALPHA_G * (self.dec_bn0.weight.grad if self.dec_bn0.weight.grad is not None else 0.)
+		self.dec_bn0.weight.bias = self.ALPHA_L * self.dec_bn0_delta_bias + self.ALPHA_G * (self.dec_bn0.bias.grad if self.dec_bn0.bias.grad is not None else 0.)
+		self.dec_fc1.weight.grad = self.ALPHA_L * self.dec_fc1_delta_w + self.ALPHA_G * (self.dec_fc1.weight.grad if self.dec_fc1.weight.grad is not None else 0.)
+		self.dec_fc1.weight.bias = self.ALPHA_L * self.dec_fc1_delta_bias + self.ALPHA_G * (self.dec_fc1.bias.grad if self.dec_fc1.bias.grad is not None else 0.)
+		
+		self.conv4.weight.grad = self.ALPHA_L * self.conv4_delta_w + self.ALPHA_G * (self.conv4.weight.grad if self.conv4.weight.grad is not None else 0.)
+		self.conv4.weight.bias = self.ALPHA_L * self.conv4_delta_bias + self.ALPHA_G * (self.conv4.bias.grad if self.conv4.bias.grad is not None else 0.)
+		self.bn4.weight.grad = self.ALPHA_L * self.bn4_delta_w + self.ALPHA_G * (self.bn4.weight.grad if self.bn4.weight.grad is not None else 0.)
+		self.bn4.weight.bias = self.ALPHA_L * self.bn4_delta_bias + self.ALPHA_G * (self.bn4.bias.grad if self.bn4.bias.grad is not None else 0.)
+		self.fc_mu4.weight.grad = self.ALPHA_L * self.fc_mu4_delta_w + self.ALPHA_G * (self.fc_mu4.weight.grad if self.fc_mu4.weight.grad is not None else 0.)
+		self.fc_mu4.weight.bias = self.ALPHA_L * self.fc_mu4_delta_bias + self.ALPHA_G * (self.fc_mu4.bias.grad if self.fc_mu4.bias.grad is not None else 0.)
+		self.fc_var4.weight.grad = self.ALPHA_L * self.fc_var4_delta_w + self.ALPHA_G * (self.fc_var4.weight.grad if self.fc_var4.weight.grad is not None else 0.)
+		self.fc_var4.weight.bias = self.ALPHA_L * self.fc_var4_delta_bias + self.ALPHA_G * (self.fc_var4.bias.grad if self.fc_var4.bias.grad is not None else 0.)
+		self.dec_fc2.weight.grad = self.ALPHA_L * self.dec_fc2_delta_w + self.ALPHA_G * (self.dec_fc2.weight.grad if self.dec_fc2.weight.grad is not None else 0.)
+		self.dec_fc2.weight.bias = self.ALPHA_L * self.dec_fc2_delta_bias + self.ALPHA_G * (self.dec_fc2.bias.grad if self.dec_fc2.bias.grad is not None else 0.)
+		self.dec_bn2.weight.grad = self.ALPHA_L * self.dec_bn2_delta_w + self.ALPHA_G * (self.dec_bn2.weight.grad if self.dec_bn2.weight.grad is not None else 0.)
+		self.dec_bn2.weight.bias = self.ALPHA_L * self.dec_bn2_delta_bias + self.ALPHA_G * (self.dec_bn2.bias.grad if self.dec_bn2.bias.grad is not None else 0.)
+		self.dec_conv2.weight.grad = self.ALPHA_L * self.dec_conv2_delta_w + self.ALPHA_G * (self.dec_conv2.weight.grad if self.dec_conv2.weight.grad is not None else 0.)
+		self.dec_conv2.weight.bias = self.ALPHA_L * self.dec_conv2_delta_bias + self.ALPHA_G * (self.dec_conv2.bias.grad if self.dec_conv2.bias.grad is not None else 0.)
+		
+		self.conv3.weight.grad = self.ALPHA_L * self.conv3_delta_w + self.ALPHA_G * (self.conv3.weight.grad if self.conv3.weight.grad is not None else 0.)
+		self.conv3.weight.bias = self.ALPHA_L * self.conv3_delta_bias + self.ALPHA_G * (self.conv3.bias.grad if self.conv3.bias.grad is not None else 0.)
+		self.bn3.weight.grad = self.ALPHA_L * self.bn3_delta_w + self.ALPHA_G * (self.bn3.weight.grad if self.bn3.weight.grad is not None else 0.)
+		self.bn3.weight.bias = self.ALPHA_L * self.bn3_delta_bias + self.ALPHA_G * (self.bn3.bias.grad if self.bn3.bias.grad is not None else 0.)
+		self.fc_mu3.weight.grad = self.ALPHA_L * self.fc_mu3_delta_w + self.ALPHA_G * (self.fc_mu3.weight.grad if self.fc_mu3.weight.grad is not None else 0.)
+		self.fc_mu3.weight.bias = self.ALPHA_L * self.fc_mu3_delta_bias + self.ALPHA_G * (self.fc_mu3.bias.grad if self.fc_mu3.bias.grad is not None else 0.)
+		self.fc_var3.weight.grad = self.ALPHA_L * self.fc_var3_delta_w + self.ALPHA_G * (self.fc_var3.weight.grad if self.fc_var3.weight.grad is not None else 0.)
+		self.fc_var3.weight.bias = self.ALPHA_L * self.fc_var3_delta_bias + self.ALPHA_G * (self.fc_var3.bias.grad if self.fc_var3.bias.grad is not None else 0.)
+		self.dec_fc3.weight.grad = self.ALPHA_L * self.dec_fc3_delta_w + self.ALPHA_G * (self.dec_fc3.weight.grad if self.dec_fc3.weight.grad is not None else 0.)
+		self.dec_fc3.weight.bias = self.ALPHA_L * self.dec_fc3_delta_bias + self.ALPHA_G * (self.dec_fc3.bias.grad if self.dec_fc3.bias.grad is not None else 0.)
+		self.dec_bn3.weight.grad = self.ALPHA_L * self.dec_bn3_delta_w + self.ALPHA_G * (self.dec_bn3.weight.grad if self.dec_bn3.weight.grad is not None else 0.)
+		self.dec_bn3.weight.bias = self.ALPHA_L * self.dec_bn3_delta_bias + self.ALPHA_G * (self.dec_bn3.bias.grad if self.dec_bn3.bias.grad is not None else 0.)
+		self.dec_conv3.weight.grad = self.ALPHA_L * self.dec_conv3_delta_w + self.ALPHA_G * (self.dec_conv3.weight.grad if self.dec_conv3.weight.grad is not None else 0.)
+		self.dec_conv3.weight.bias = self.ALPHA_L * self.dec_conv3_delta_bias + self.ALPHA_G * (self.dec_conv3.bias.grad if self.dec_conv3.bias.grad is not None else 0.)
+		
+		self.conv2.weight.grad = self.ALPHA_L * self.conv2_delta_w + self.ALPHA_G * (self.conv2.weight.grad if self.conv2.weight.grad is not None else 0.)
+		self.conv2.weight.bias = self.ALPHA_L * self.conv2_delta_bias + self.ALPHA_G * (self.conv2.bias.grad if self.conv2.bias.grad is not None else 0.)
+		self.bn2.weight.grad = self.ALPHA_L * self.bn2_delta_w + self.ALPHA_G * (self.bn2.weight.grad if self.bn2.weight.grad is not None else 0.)
+		self.bn2.weight.bias = self.ALPHA_L * self.bn2_delta_bias + self.ALPHA_G * (self.bn2.bias.grad if self.bn2.bias.grad is not None else 0.)
+		self.fc_mu2.weight.grad = self.ALPHA_L * self.fc_mu2_delta_w + self.ALPHA_G * (self.fc_mu2.weight.grad if self.fc_mu2.weight.grad is not None else 0.)
+		self.fc_mu2.weight.bias = self.ALPHA_L * self.fc_mu2_delta_bias + self.ALPHA_G * (self.fc_mu2.bias.grad if self.fc_mu2.bias.grad is not None else 0.)
+		self.fc_var2.weight.grad = self.ALPHA_L * self.fc_var2_delta_w + self.ALPHA_G * (self.fc_var2.weight.grad if self.fc_var2.weight.grad is not None else 0.)
+		self.fc_var2.weight.bias = self.ALPHA_L * self.fc_var2_delta_bias + self.ALPHA_G * (self.fc_var2.bias.grad if self.fc_var2.bias.grad is not None else 0.)
+		self.dec_fc4.weight.grad = self.ALPHA_L * self.dec_fc4_delta_w + self.ALPHA_G * (self.dec_fc4.weight.grad if self.dec_fc4.weight.grad is not None else 0.)
+		self.dec_fc4.weight.bias = self.ALPHA_L * self.dec_fc4_delta_bias + self.ALPHA_G * (self.dec_fc4.bias.grad if self.dec_fc4.bias.grad is not None else 0.)
+		self.dec_bn4.weight.grad = self.ALPHA_L * self.dec_bn4_delta_w + self.ALPHA_G * (self.dec_bn4.weight.grad if self.dec_bn4.weight.grad is not None else 0.)
+		self.dec_bn4.weight.bias = self.ALPHA_L * self.dec_bn4_delta_bias + self.ALPHA_G * (self.dec_bn4.bias.grad if self.dec_bn4.bias.grad is not None else 0.)
+		self.dec_conv4.weight.grad = self.ALPHA_L * self.dec_conv4_delta_w + self.ALPHA_G * (self.dec_conv4.weight.grad if self.dec_conv4.weight.grad is not None else 0.)
+		self.dec_conv4.weight.bias = self.ALPHA_L * self.dec_conv4_delta_bias + self.ALPHA_G * (self.dec_conv4.bias.grad if self.dec_conv4.bias.grad is not None else 0.)
+		
+		self.conv1.weight.grad = self.ALPHA_L * self.conv1_delta_w + self.ALPHA_G * (self.conv1.weight.grad if self.conv1.weight.grad is not None else 0.)
+		self.conv1.weight.bias = self.ALPHA_L * self.conv1_delta_bias + self.ALPHA_G * (self.conv1.bias.grad if self.conv1.bias.grad is not None else 0.)
+		self.bn1.weight.grad = self.ALPHA_L * self.bn1_delta_w + self.ALPHA_G * (self.bn1.weight.grad if self.bn1.weight.grad is not None else 0.)
+		self.bn1.weight.bias = self.ALPHA_L * self.bn1_delta_bias + self.ALPHA_G * (self.bn1.bias.grad if self.bn1.bias.grad is not None else 0.)
+		self.fc_mu1.weight.grad = self.ALPHA_L * self.fc_mu1_delta_w + self.ALPHA_G * (self.fc_mu1.weight.grad if self.fc_mu1.weight.grad is not None else 0.)
+		self.fc_mu1.weight.bias = self.ALPHA_L * self.fc_mu1_delta_bias + self.ALPHA_G * (self.fc_mu1.bias.grad if self.fc_mu1.bias.grad is not None else 0.)
+		self.fc_var1.weight.grad = self.ALPHA_L * self.fc_var1_delta_w + self.ALPHA_G * (self.fc_var1.weight.grad if self.fc_var1.weight.grad is not None else 0.)
+		self.fc_var1.weight.bias = self.ALPHA_L * self.fc_var1_delta_bias + self.ALPHA_G * (self.fc_var1.bias.grad if self.fc_var1.bias.grad is not None else 0.)
+		self.dec_fc5.weight.grad = self.ALPHA_L * self.dec_fc5_delta_w + self.ALPHA_G * (self.dec_fc5.weight.grad if self.dec_fc5.weight.grad is not None else 0.)
+		self.dec_fc5.weight.bias = self.ALPHA_L * self.dec_fc5_delta_bias + self.ALPHA_G * (self.dec_fc5.bias.grad if self.dec_fc5.bias.grad is not None else 0.)
+		self.dec_bn5.weight.grad = self.ALPHA_L * self.dec_bn5_delta_w + self.ALPHA_G * (self.dec_bn5.weight.grad if self.dec_bn5.weight.grad is not None else 0.)
+		self.dec_bn5.weight.bias = self.ALPHA_L * self.dec_bn5_delta_bias + self.ALPHA_G * (self.dec_bn5.bias.grad if self.dec_bn5.bias.grad is not None else 0.)
+		self.dec_conv5.weight.grad = self.ALPHA_L * self.dec_conv5_delta_w + self.ALPHA_G * (self.dec_conv5.weight.grad if self.dec_conv5.weight.grad is not None else 0.)
+		self.dec_conv5.weight.bias = self.ALPHA_L * self.dec_conv5_delta_bias + self.ALPHA_G * (self.dec_conv5.bias.grad if self.dec_conv5.bias.grad is not None else 0.)
+		
 			
-			self.conv4.weight.grad = self.ALPHA * self.conv4_delta_w + (1 - self.ALPHA) * self.conv4.weight.grad
-			self.conv4.weight.bias = self.ALPHA * self.conv4_delta_bias + (1 - self.ALPHA) * self.conv4.bias.grad
-			self.bn4.weight.grad = self.ALPHA * self.bn4_delta_w + (1 - self.ALPHA) * self.bn4.weight.grad
-			self.bn4.weight.bias = self.ALPHA * self.bn4_delta_bias + (1 - self.ALPHA) * self.bn4.bias.grad
-			self.fc_mu4.weight.grad = self.ALPHA * self.fc_mu4_delta_w + (1 - self.ALPHA) * self.fc_mu4.weight.grad
-			self.fc_mu4.weight.bias = self.ALPHA * self.fc_mu4_delta_bias + (1 - self.ALPHA) * self.fc_mu4.bias.grad
-			self.fc_var4.weight.grad = self.ALPHA * self.fc_var4_delta_w + (1 - self.ALPHA) * self.fc_var4.weight.grad
-			self.fc_var4.weight.bias = self.ALPHA * self.fc_var4_delta_bias + (1 - self.ALPHA) * self.fc_var4.bias.grad
-			self.dec_fc2.weight.grad = self.ALPHA * self.dec_fc2_delta_w + (1 - self.ALPHA) * self.dec_fc2.weight.grad
-			self.dec_fc2.weight.bias = self.ALPHA * self.dec_fc2_delta_bias + (1 - self.ALPHA) * self.dec_fc2.bias.grad
-			self.dec_bn2.weight.grad = self.ALPHA * self.dec_bn2_delta_w + (1 - self.ALPHA) * self.dec_bn2.weight.grad
-			self.dec_bn2.weight.bias = self.ALPHA * self.dec_bn2_delta_bias + (1 - self.ALPHA) * self.dec_bn2.bias.grad
-			self.dec_conv2.weight.grad = self.ALPHA * self.dec_conv2_delta_w + (1 - self.ALPHA) * self.dec_conv2.weight.grad
-			self.dec_conv2.weight.bias = self.ALPHA * self.dec_conv2_delta_bias + (1 - self.ALPHA) * self.dec_conv2.bias.grad
-			
-			self.conv3.weight.grad = self.ALPHA * self.conv3_delta_w + (1 - self.ALPHA) * self.conv3.weight.grad
-			self.conv3.weight.bias = self.ALPHA * self.conv3_delta_bias + (1 - self.ALPHA) * self.conv3.bias.grad
-			self.bn3.weight.grad = self.ALPHA * self.bn3_delta_w + (1 - self.ALPHA) * self.bn3.weight.grad
-			self.bn3.weight.bias = self.ALPHA * self.bn3_delta_bias + (1 - self.ALPHA) * self.bn3.bias.grad
-			self.fc_mu3.weight.grad = self.ALPHA * self.fc_mu3_delta_w + (1 - self.ALPHA) * self.fc_mu3.weight.grad
-			self.fc_mu3.weight.bias = self.ALPHA * self.fc_mu3_delta_bias + (1 - self.ALPHA) * self.fc_mu3.bias.grad
-			self.fc_var3.weight.grad = self.ALPHA * self.fc_var3_delta_w + (1 - self.ALPHA) * self.fc_var3.weight.grad
-			self.fc_var3.weight.bias = self.ALPHA * self.fc_var3_delta_bias + (1 - self.ALPHA) * self.fc_var3.bias.grad
-			self.dec_fc3.weight.grad = self.ALPHA * self.dec_fc3_delta_w + (1 - self.ALPHA) * self.dec_fc3.weight.grad
-			self.dec_fc3.weight.bias = self.ALPHA * self.dec_fc3_delta_bias + (1 - self.ALPHA) * self.dec_fc3.bias.grad
-			self.dec_bn3.weight.grad = self.ALPHA * self.dec_bn3_delta_w + (1 - self.ALPHA) * self.dec_bn3.weight.grad
-			self.dec_bn3.weight.bias = self.ALPHA * self.dec_bn3_delta_bias + (1 - self.ALPHA) * self.dec_bn3.bias.grad
-			self.dec_conv3.weight.grad = self.ALPHA * self.dec_conv3_delta_w + (1 - self.ALPHA) * self.dec_conv3.weight.grad
-			self.dec_conv3.weight.bias = self.ALPHA * self.dec_conv3_delta_bias + (1 - self.ALPHA) * self.dec_conv3.bias.grad
-			
-			self.conv2.weight.grad = self.ALPHA * self.conv2_delta_w + (1 - self.ALPHA) * self.conv2.weight.grad
-			self.conv2.weight.bias = self.ALPHA * self.conv2_delta_bias + (1 - self.ALPHA) * self.conv2.bias.grad
-			self.bn2.weight.grad = self.ALPHA * self.bn2_delta_w + (1 - self.ALPHA) * self.bn2.weight.grad
-			self.bn2.weight.bias = self.ALPHA * self.bn2_delta_bias + (1 - self.ALPHA) * self.bn2.bias.grad
-			self.fc_mu2.weight.grad = self.ALPHA * self.fc_mu2_delta_w + (1 - self.ALPHA) * self.fc_mu2.weight.grad
-			self.fc_mu2.weight.bias = self.ALPHA * self.fc_mu2_delta_bias + (1 - self.ALPHA) * self.fc_mu2.bias.grad
-			self.fc_var2.weight.grad = self.ALPHA * self.fc_var2_delta_w + (1 - self.ALPHA) * self.fc_var2.weight.grad
-			self.fc_var2.weight.bias = self.ALPHA * self.fc_var2_delta_bias + (1 - self.ALPHA) * self.fc_var2.bias.grad
-			self.dec_fc4.weight.grad = self.ALPHA * self.dec_fc4_delta_w + (1 - self.ALPHA) * self.dec_fc4.weight.grad
-			self.dec_fc4.weight.bias = self.ALPHA * self.dec_fc4_delta_bias + (1 - self.ALPHA) * self.dec_fc4.bias.grad
-			self.dec_bn4.weight.grad = self.ALPHA * self.dec_bn4_delta_w + (1 - self.ALPHA) * self.dec_bn4.weight.grad
-			self.dec_bn4.weight.bias = self.ALPHA * self.dec_bn4_delta_bias + (1 - self.ALPHA) * self.dec_bn4.bias.grad
-			self.dec_conv4.weight.grad = self.ALPHA * self.dec_conv4_delta_w + (1 - self.ALPHA) * self.dec_conv4.weight.grad
-			self.dec_conv4.weight.bias = self.ALPHA * self.dec_conv4_delta_bias + (1 - self.ALPHA) * self.dec_conv4.bias.grad
-			
-			self.conv1.weight.grad = self.ALPHA * self.conv1_delta_w + (1 - self.ALPHA) * self.conv1.weight.grad
-			self.conv1.weight.bias = self.ALPHA * self.conv1_delta_bias + (1 - self.ALPHA) * self.conv1.bias.grad
-			self.bn1.weight.grad = self.ALPHA * self.bn1_delta_w + (1 - self.ALPHA) * self.bn1.weight.grad
-			self.bn1.weight.bias = self.ALPHA * self.bn1_delta_bias + (1 - self.ALPHA) * self.bn1.bias.grad
-			self.fc_mu1.weight.grad = self.ALPHA * self.fc_mu1_delta_w + (1 - self.ALPHA) * self.fc_mu1.weight.grad
-			self.fc_mu1.weight.bias = self.ALPHA * self.fc_mu1_delta_bias + (1 - self.ALPHA) * self.fc_mu1.bias.grad
-			self.fc_var1.weight.grad = self.ALPHA * self.fc_var1_delta_w + (1 - self.ALPHA) * self.fc_var1.weight.grad
-			self.fc_var1.weight.bias = self.ALPHA * self.fc_var1_delta_bias + (1 - self.ALPHA) * self.fc_var1.bias.grad
-			self.dec_fc5.weight.grad = self.ALPHA * self.dec_fc5_delta_w + (1 - self.ALPHA) * self.dec_fc5.weight.grad
-			self.dec_fc5.weight.bias = self.ALPHA * self.dec_fc5_delta_bias + (1 - self.ALPHA) * self.dec_fc5.bias.grad
-			self.dec_bn5.weight.grad = self.ALPHA * self.dec_bn5_delta_w + (1 - self.ALPHA) * self.dec_bn5.weight.grad
-			self.dec_bn5.weight.bias = self.ALPHA * self.dec_bn5_delta_bias + (1 - self.ALPHA) * self.dec_bn5.bias.grad
-			self.dec_conv5.weight.grad = self.ALPHA * self.dec_conv5_delta_w + (1 - self.ALPHA) * self.dec_conv5.weight.grad
-			self.dec_conv5.weight.bias = self.ALPHA * self.dec_conv5_delta_bias + (1 - self.ALPHA) * self.dec_conv5.bias.grad

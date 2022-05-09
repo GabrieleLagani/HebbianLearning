@@ -81,13 +81,13 @@ class DataManager:
   
 		# Define transformations to be applied on the data
   
-		# First we need to bring the (shortest dimension of the) image to the desired x size and the number of
+		# First we need to bring the (shortest dimension of the) image to the desired input size and the number of
 		# channels to the desired number.
 		T_resize = transforms.Resize(self.INPUT_SIZE) if self.INPUT_CHANNELS == self.DEFAULT_INPUT_CHANNELS else transforms.Compose([transforms.Grayscale(self.INPUT_CHANNELS), transforms.Resize(self.INPUT_SIZE)])
   
 		# Add other necessary transformations
 		T_other = transforms.Compose([
-			# Take a central square crop of the desired x size (needed in case the image is non square)
+			# Take a central square crop of the desired input size (needed in case the image is non square)
 			transforms.CenterCrop(self.INPUT_SIZE),
 			# ToTensor transforms the raw img to a tensor in the form [depth, width, height].
 			# Additionally, pixel values are mapped from the range [0, 255] to the range [0, 1]

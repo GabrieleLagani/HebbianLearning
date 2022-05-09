@@ -1,7 +1,4 @@
-import torch
-
 from ..optimization import MetricManager
-from neurolab import params as P
 
 
 # Return index representing current training progress (number of processed batches). Useful when one does not want to

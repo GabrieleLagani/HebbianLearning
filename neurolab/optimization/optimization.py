@@ -3,7 +3,7 @@ class OptimManager:
 	def __init__(self, config):
 		self.config = config
 	
-	def get_optimizer(self, net):
+	def get_optimizer(self, param_groups):
 		raise NotImplementedError
 
 # Scheduling manager base class
@@ -11,7 +11,7 @@ class SchedManager:
 	def __init__(self, config):
 		self.config = config
 	
-	def get_scheduler(self, optimizer):
+	def get_scheduler(self, optimizer, saved_state=None):
 		raise NotImplementedError
 
 # Criterion manager base class

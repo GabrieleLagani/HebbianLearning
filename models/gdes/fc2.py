@@ -24,9 +24,9 @@ class Net(Model):
 		# Here we define the layers of our network
 		
 		# FC Layers
-		self.fc1 = nn.Linear(self.INPUT_SIZE, 4096)  # input_size-dimensional x, 4096-dimensional output
+		self.fc1 = nn.Linear(self.INPUT_SIZE, 4096)  # input_size-dimensional input, 4096-dimensional output
 		self.bn1 = nn.BatchNorm1d(4096)  # Batch Norm layer
-		self.fc2 = nn.Linear(4096, self.NUM_CLASSES) # 4096-dimensional x, NUM_CLASSES-dimensional output (one per class)
+		self.fc2 = nn.Linear(4096, self.NUM_CLASSES) # 4096-dimensional input, NUM_CLASSES-dimensional output (one per class)
 	
 	# Here we define the flow of information through the network
 	def forward(self, x):

@@ -19,10 +19,10 @@ class HPManager:
 		utils.set_rng_state(prev_rng_state)
 	
 	def state_dict(self):
-		return utils.state_dict(self)
+		return utils.default_state_dict(self)
 	
 	def load_state_dict(self, d):
-		utils.load_state_dict(self, d)
+		utils.default_load_state_dict(self, d)
 	
 	def get_next_hyperparams(self):
 		raise NotImplementedError
@@ -139,7 +139,13 @@ class HPSearch:
 				self.logger.print_and_log("Current hyperparameters: \n" + str(curr_hyperparams) + "\n")
 				
 				# Prepare configuration
-				for k in curr_hyperparams.keys(): self.CONFIG_OPTIONS[k] = curr_hyperparams[k]
+				for k in curr_hyperparams.keys():
+					if ';' not in k: self.CONFIG_OPTIONS[k] = curr_hyperparams[k] # set the current hyperparams in the config options
+					else: # The ';' is used to denote joint hyperparams, i.e. sets of hyperparams which should be modified jointly
+						joint_keys = k.split(';')
+						for j in range(len(joint_keys)):
+							self.CONFIG_OPTIONS[joint_keys[j]] = curr_hyperparams[k][j]
+				# Create configuration with the desired hyperparams
 				curr_config = utils.Config(config_id=self.config, config_options=self.CONFIG_OPTIONS, mode=P.MODE_TRN,
 				                           iter_num=i, iter_id=self.seeds[i], result_base_folder=self.HPSEARCH_RESULT_BASE_FOLDER,
 				                           tokens=self.tokens[i % len(self.tokens)] if self.tokens is not None else None,

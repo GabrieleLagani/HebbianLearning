@@ -102,7 +102,7 @@ class BtmUpExperiment(Experiment):
 		# --restart flag, restart is going to be False. If instead the --restart Flag is used, the checkpoint is not
 		# loaded and restart is going to be True as by default.
 		self.restart = False
-		utils.save_dict(utils.obj2dict(self), os.path.join(self.config.CHECKPOINT_FOLDER, "checkpoint0.pt"))
+		utils.save_dict(utils.obj2dict(self), os.path.join(self.config.CHECKPOINT_FOLDER, 'checkpoint0.pt'))
 		
 		# Retrieve configuration and launch experiment
 		for idx, config in enumerate(self.config.CONFIG_OPTIONS[P.KEY_SUBCONFIG_LIST]):

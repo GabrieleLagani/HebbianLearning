@@ -6,7 +6,7 @@ from .. import params as P
 from .data import AugmentManager
 
 
-# Custom transform for random x resize
+# Custom transform for random input resize
 class RandomResize:
 	def __init__(self, min_size, max_size):
 		self.min_size = min_size

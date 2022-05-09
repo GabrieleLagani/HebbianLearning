@@ -45,40 +45,40 @@ class Net(Model):
 		# Here we define the layers of our network
 		
 		# First convolutional layer
-		self.conv1 = nn.Conv2d(3, 96, 5) # 3 x channels, 96 output channels, 5x5 convolutions
+		self.conv1 = nn.Conv2d(3, 96, 5) # 3 input channels, 96 output channels, 5x5 convolutions
 		self.bn1 = nn.BatchNorm2d(96) # Batch Norm layer
 		# Second convolutional layer
-		self.conv2 = nn.Conv2d(96, 128, 3) # 96 x channels, 128 output channels, 3x3 convolutions
+		self.conv2 = nn.Conv2d(96, 128, 3) # 96 input channels, 128 output channels, 3x3 convolutions
 		self.bn2 = nn.BatchNorm2d(128) # Batch Norm layer
 		# Third convolutional layer
-		self.conv3 = nn.Conv2d(128, 192, 3)  # 128 x channels, 192 output channels, 3x3 convolutions
+		self.conv3 = nn.Conv2d(128, 192, 3)  # 128 input channels, 192 output channels, 3x3 convolutions
 		self.bn3 = nn.BatchNorm2d(192) # Batch Norm layer
 		# Fourth convolutional layer
-		self.conv4 = nn.Conv2d(192, 256, 3)  # 192 x channels, 256 output channels, 3x3 convolutions
+		self.conv4 = nn.Conv2d(192, 256, 3)  # 192 input channels, 256 output channels, 3x3 convolutions
 		self.bn4 = nn.BatchNorm2d(256) # Batch Norm layer
 		
 		self.CONV_OUTPUT_SHAPE = utils.tens2shape(self.get_dummy_fmap()[self.CONV_OUTPUT])
 		self.CONV_OUTPUT_SIZE = utils.shape2size(self.CONV_OUTPUT_SHAPE)
 		
 		# FC Layers
-		self.fc5 = nn.Linear(self.CONV_OUTPUT_SIZE, 4096) # conv_output_size-dimensional x, 4096-dimensional output
+		self.fc5 = nn.Linear(self.CONV_OUTPUT_SIZE, 4096) # conv_output_size-dimensional input, 4096-dimensional output
 		self.bn5 = nn.BatchNorm1d(4096) # Batch Norm layer
-		self.fc6 = nn.Linear(4096, self.NUM_CLASSES) # 4096-dimensional x, NUM_CLASSES-dimensional output (one per class)
-		self.fc_mu =  nn.Linear(4096, self.NUM_LATENT_VARS)  # 4096-dimensional x, NUM_LATENT_VARS-dimensional output
-		self.fc_var =  nn.Linear(4096, self.NUM_LATENT_VARS)  # 4096-dimensional x, NUM_LATENT_VARS-dimensional output
+		self.fc6 = nn.Linear(4096, self.NUM_CLASSES) # 4096-dimensional input, NUM_CLASSES-dimensional output (one per class)
+		self.fc_mu =  nn.Linear(4096, self.NUM_LATENT_VARS)  # 4096-dimensional input, NUM_LATENT_VARS-dimensional output
+		self.fc_var =  nn.Linear(4096, self.NUM_LATENT_VARS)  # 4096-dimensional input, NUM_LATENT_VARS-dimensional output
 		
 		# Decoding Layers
-		self.dec_fc0 = nn.Linear(self.NUM_LATENT_VARS, 4096)  # NUM_LATENT_VARS-dimensional x, 4096-dimensional output
+		self.dec_fc0 = nn.Linear(self.NUM_LATENT_VARS, 4096)  # NUM_LATENT_VARS-dimensional input, 4096-dimensional output
 		self.dec_bn0 = nn.BatchNorm1d(4096)  # Batch Norm layer
-		self.dec_fc1 = nn.Linear(4096, self.CONV_OUTPUT_SIZE)  # 4096-dimensional x, CONV_OUTPUT_SIZE-dimensional output
+		self.dec_fc1 = nn.Linear(4096, self.CONV_OUTPUT_SIZE)  # 4096-dimensional input, CONV_OUTPUT_SIZE-dimensional output
 		self.dec_bn1 = nn.BatchNorm1d(self.CONV_OUTPUT_SIZE)  # Batch Norm layer
-		self.dec_conv2 = nn.ConvTranspose2d(256, 192, 3) # 256 x channels, 192 output channels, 3x3 transpose convolutions
+		self.dec_conv2 = nn.ConvTranspose2d(256, 192, 3) # 256 input channels, 192 output channels, 3x3 transpose convolutions
 		self.dec_bn2 = nn.BatchNorm2d(192) # Batch Norm layer
-		self.dec_conv3 = nn.ConvTranspose2d(192, 128, 3) # 192 x channels, 128 output channels, 3x3 transpose convolutions
+		self.dec_conv3 = nn.ConvTranspose2d(192, 128, 3) # 192 input channels, 128 output channels, 3x3 transpose convolutions
 		self.dec_bn3 = nn.BatchNorm2d(128) # Batch Norm layer
-		self.dec_conv4 = nn.ConvTranspose2d(128, 96, 3) # 128 x channels, 96 output channels, 3x3 transpose convolutions
+		self.dec_conv4 = nn.ConvTranspose2d(128, 96, 3) # 128 input channels, 96 output channels, 3x3 transpose convolutions
 		self.dec_bn4 = nn.BatchNorm2d(96) # Batch Norm layer
-		self.dec_conv5 = nn.ConvTranspose2d(96, 3, 5) # 96 x channels, 3 output channels, 5x5 transpose convolutions
+		self.dec_conv5 = nn.ConvTranspose2d(96, 3, 5) # 96 input channels, 3 output channels, 5x5 transpose convolutions
 		self.dec_bn5 = nn.BatchNorm2d(3) # Batch Norm layer
 	
 	def get_conv_output(self, x):

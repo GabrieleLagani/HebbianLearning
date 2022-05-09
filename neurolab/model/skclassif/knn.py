@@ -13,7 +13,8 @@ class KNNClassifier(SkClassif):
 		self.N_NEIGHBORS = config.CONFIG_OPTIONS.get(P.KEY_KNN_N_NEIGHBORS, 10)
 		self.clf = KNeighborsClassifier(n_neighbors=self.N_NEIGHBORS)
 	
-	def compute_output(self, x):
-		return torch.tensor(self.clf.predict_proba(self.nystroem.transform(x.view(x.size(0), -1).tolist())), device=P.DEVICE)
+	def get_clf_pred(self, x):
+		if not self.clf_fitted: return torch.rand((len(x), self.NUM_CLASSES), device=P.DEVICE)
+		return torch.tensor(self.clf.predict_proba(self.nystroem.transform(x)), device=P.DEVICE)
 	
 	

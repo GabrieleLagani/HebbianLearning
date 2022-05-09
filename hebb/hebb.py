@@ -4,12 +4,20 @@ from .functional import *
 import params as P
 
 
-# TODO: Implement Hebbian update directly on gpu.
-# TODO: Add other functionalities to Hebbian module
+# TODO:
+#   - Bias should be considered as other adaptive parameters, hence with a separate affine parameter. Maybe remove the
+#       merged updates for the bias. When bias is used as variance, we should find a way to make so that larger bias
+#       means more selective, hence overfitting, so that L2 regularization makes sense as in the case of additive bias.
+#       We can simply add the adaptive and affine bias, and then exponentiate by this number instead of its reciprocal.
+#   - Normalization based on layer norm in addition to batch norm, Modified batch norm layer which computes stats only
+#       adaptively, and not batch wise, and in the backward pass computes the gradients as if the stats were computed
+#       batch wise. Possibility to normalize with average of variances rather than each feature with its own variance.
+#       Possibility to normalize with heuristics based on weights.
+#   - Trisigma wta configs
+#   - Post nonlinear demixer ica, Mix ica and pca, ica kappa parameter adapted by infomax.
 #   - Recurrent computation and lca
-#   - Lateral decorrelation
-#   - Trisigma wta
-
+#   - Spatial decorrelation, competition + reconstruction, other reconstruction criteria, hebbian rules from other
+#       losses, backward feedback, differentiable plasticity, splitting nonlinearities, reorganize weight init
 
 
 class Competitive(nn.Module):
@@ -23,23 +31,36 @@ class Competitive(nn.Module):
 	LFB_EXP = 'lfb_exp'
 	LFB_DoE = 'lfb_DoE'
 	
+	# Types of adaptation mechanisms for the k parameter
+	ADA_K_MODE_STD = 'ada_k_mode_std'
+	ADA_K_MODE_LOG = 'ada_k_mode_log'
+	ADA_K_MODE_SHIFT = 'ada_k_mode_shift'
+	
 	
 	def __init__(self,
 	             out_size=None,
 	             competitive_act=None,
 	             k=1,
 	             lrn_k=False,
+	             ada_k=None,
 	             random_abstention=None,
 	             y_gating=False,
 	             lfb_y_gating=False,
 	             lfb_value=None,
 	             lfb_sigma=None,
-	             lfb_tau=1000):
+	             lfb_tau=1000,
+	             beta=.1):
+		# Default gives always all 1s in output (times the teacher signal, if provided), i.e. all winners. Competitive(lfb_y_gating=True) gives identity mapping.
 		super(Competitive, self).__init__()
 		# Enable/disable features such as random abstention, competitive learning, lateral feedback
 		self.competitive_act = competitive_act
 		self.competitive = self.competitive_act is not None
+		self.beta = beta
 		self.k = k if not lrn_k else nn.Parameter(torch.tensor(float(k)), requires_grad=True)
+		if ada_k not in [None, self.ADA_K_MODE_STD, self.ADA_K_MODE_LOG, self.ADA_K_MODE_SHIFT]:
+			raise ValueError("Invalid value for argument ada_k: " + str(ada_k))
+		self.ada_k = ada_k
+		self.trk = nn.BatchNorm2d(1, momentum=self.beta, affine=False)
 		if self.competitive and random_abstention not in [None, self.SOFT_RAND_ABST, self.HARD_RAND_ABST]:
 			raise ValueError("Invalid value for argument random_abstention: " + str(random_abstention))
 		self.random_abstention = random_abstention
@@ -95,7 +116,19 @@ class Competitive(nn.Module):
 			self.register_buffer('victories_count', torch.zeros(self.out_channels).float())
 		else: self.register_buffer('victories_count', None)
 	
-	def forward(self, y, t=None):
+	def get_k(self, scores, lrn=False):
+		k = self.k
+		if self.training and lrn: # Track stats
+			if self.ada_k == self.ADA_K_MODE_LOG: _ = self.trk(torch.log(scores).view(-1, 1, 1, 1))
+			else: _ = self.trk(scores.view(-1, 1, 1, 1))
+		# Compute adaptive k
+		if self.ada_k in [self.ADA_K_MODE_STD, self.ADA_K_MODE_LOG]:
+			k = k * self.trk.running_var**0.5
+		if self.ada_k in [self.ADA_K_MODE_SHIFT]:
+			k = -self.trk.running_mean + k * self.trk.running_var**0.5
+		return k
+	
+	def forward(self, y, t=None, lrn=False):
 		# Random abstention
 		scores = y
 		if self.random_abstention_on:
@@ -105,8 +138,7 @@ class Competitive(nn.Module):
 		
 		# Competition. The returned winner_mask is a bitmap telling where a neuron won and where one lost.
 		if self.competitive:
-			if t is not None: scores = scores * t # When competition is on, teacher signal is used to drive competition, if provided
-			winner_mask = self.competitive_act(scores, self.k)
+			winner_mask = self.competitive_act(scores, self.get_k(scores, lrn=lrn), t)
 			if self.random_abstention_on and self.training:  # Update statistics if using random abstension
 				winner_mask_sum = winner_mask.sum(0)  # Number of inputs over which a neuron won
 				self.victories_count += winner_mask_sum
@@ -147,14 +179,14 @@ class HebbianConv2d(nn.Module):
 	INIT_NORM = 'init_norm'
 	
 	# Type of gating term
-	GATE_BASE = 'gate_base'  # r = lfb
-	GATE_HEBB = 'gate_hebb'  # r = lfb * y
-	GATE_DIFF = 'gate_diff'  # r = lfb - y
-	GATE_SMAX = 'gate_smx'  # r = lfb - softmax(y)
+	GATE_BASE = 'gate_base'  # r = cmp_res
+	GATE_HEBB = 'gate_hebb'  # r = cmp_res * y
+	GATE_DIFF = 'gate_diff'  # r = cmp_res - y
+	GATE_SMAX = 'gate_smx'  # r = cmp_res - softmax(y)
 	
 	# Type of reconstruction scheme
 	REC_QNT = 'rec_qnt'  # reconstr = w
-	REC_QNT_SGN = 'rec_qnt_sgn'  # reconstr = sign(lfb) * w
+	REC_QNT_SGN = 'rec_qnt_sgn'  # reconstr = sign(cmp_res) * w
 	REC_LIN_CMB = 'rec_lin_cmb'  # reconstr = sum_i r_i w_i
 	
 	# Type of update step
@@ -177,9 +209,9 @@ class HebbianConv2d(nn.Module):
 	# Delta W_i = sum_k (I - f(s) s^T)_ik W_k = sum_k (delta_ik - f(s_i) s_k) W_k
 	# = W_i - f(s_i) sum_k s_k W_k
 	# Normalization
-	# w_new = (w + eta Delta w) / |w + eta Delta w|^2
-	# |w + eta Delta w|^2 = w^2 (1 + eta w^T Delta w w^-2) + o(eta^2)
-	# |w + eta Delta w|^-2 = w^-2 (1 - eta w^T Delta w) + o(eta^2)
+	# w_new = (w + eta Delta w) / |w + eta Delta w|
+	# |w + eta Delta w|^2 = w^2 (1 + 2 eta w^T Delta w) + o(eta^2)
+	# (|w + eta Delta w|^2)^-1/2 = |w| (1 - eta w^T Delta w) + o(eta^2)
 	# w_new = (w + eta Delta w)(w^-2 (1 - eta w^T Delta w) + o(eta^2))
 	# = (w + eta (Delta w - (w^t Delta w) w) w^-2 + o(eta^2)
 	# Assuming w normalized --> w^-2 = 1
@@ -195,17 +227,15 @@ class HebbianConv2d(nn.Module):
 	RED_AVG = 'red_avg'  # average
 	RED_W_AVG = 'red_w_avg'  # weighted average
 	
-	# Types of bias initialization schemes
-	BIAS_INIT_ZEROS = 'bias_init_zeros'
-	BIAS_INIT_VAR_ONES = 'bias_init_var_ones'
-	BIAS_INIT_VAR_DIMS = 'bias_init_var_dims'
-	
 	# Types of bias update scheme
 	BIAS_MODE_BASE = 'bias_mode_base'
-	BIAS_MODE_HEBB = 'bias_mode_hebb'
+	BIAS_MODE_TARG = 'bias_mode_targ'
+	BIAS_MODE_STD = 'bias_mode_std'
+	BIAS_MODE_PERC = 'bias_mode_perc'
+	BIAS_MODE_VAR = 'bias_mode_var'
 	BIAS_MODE_VALUE = 'bias_mode_value'
 	
-	# Activation inversion modes - activation inversion transforms nonlinearities for some neuron into x - the nonlinearity.
+	# Activation complement modes - activation complement transforms nonlinearities for some neuron into x - the nonlinearity.
 	# This can be used during ica training to have different nonlinearities for super-gaussian and sub-gaussian variables.
 	ACT_COMPLEMENT_INIT_RAND = 'act_complement_init_rand'
 	ACT_COMPLEMENT_INIT_SPLT = 'act_complement_init_splt'
@@ -223,10 +253,13 @@ class HebbianConv2d(nn.Module):
 	             weight_init=INIT_BASE,
 	             lrn_sim=kernel_mult2d,
 	             lrn_act=identity,
-	             lrn_cmp=None,
+	             lrn_bias=False,
+	             lrn_cmp=False,
 	             out_sim=kernel_mult2d,
 	             out_act=identity,
-	             out_cmp=None,
+	             out_bias=False,
+	             out_cmp=False,
+	             competitive=None,
 	             act_complement_init=None,
 	             act_complement_ratio=0,
 	             act_complement_adapt=None,
@@ -239,18 +272,23 @@ class HebbianConv2d(nn.Module):
 	             reduction=RED_AVG,
 	             bias_init=None,
 	             bias_mode=None,
+	             bias_agg=False,
 	             bias_target=0,
 	             bias_gating=None,
+	             bias_var_gating=False,
 	             var_adaptive=False,
 	             var_affine=False,
-	             lamb=1.,
 	             conserve_var=True,
-	             alpha=1.,
-	             alpha_bias=1.,
-	             beta=.1):
+	             alpha_l=1,
+	             alpha_g=0,
+	             alpha_bias_l=1,
+	             alpha_bias_g=0,
+	             beta=.1,
+	             fasthebb=True,
+	             reordmult=True,):
 		super(HebbianConv2d, self).__init__()
 		# Init weights
-		if weight_init not in [self.INIT_BASE, self.INIT_NORM]:
+		if not callable(weight_init) and weight_init not in [self.INIT_BASE, self.INIT_NORM]:
 			raise ValueError("Invalid value for argument weight_init: " + str(weight_init))
 		if hasattr(kernel_size, '__len__') and len(kernel_size) == 1: kernel_size = kernel_size[0]
 		if not hasattr(kernel_size, '__len__'): kernel_size = [kernel_size, kernel_size]
@@ -258,36 +296,26 @@ class HebbianConv2d(nn.Module):
 		self.weight = nn.Parameter(torch.empty(out_channels, in_channels, kernel_size[0], kernel_size[1]), requires_grad=True)
 		nn.init.uniform_(self.weight, -stdv, stdv)  # Same initialization used by default pytorch conv modules (the one from the paper "Efficient Backprop, LeCun")
 		if weight_init == self.INIT_NORM: self.weight = self.weight / self.weight.view(self.weight.size(0), -1).norm(dim=1, p=2).view(-1, 1, 1, 1)  # normalize weights
+		if callable(weight_init): self.weight = weight_init(self.weight)
 		
-		# Init bias
-		if bias_mode not in [None, self.BIAS_MODE_BASE, self.BIAS_MODE_HEBB, self.BIAS_MODE_VALUE]:
-			raise ValueError("Invalid value for argument bias_mode: " + str(bias_mode))
-		if bias_init not in [None, self.BIAS_INIT_ZEROS, self.BIAS_INIT_VAR_ONES, self.BIAS_INIT_VAR_DIMS] and bias_mode != self.BIAS_MODE_VALUE:
-			raise ValueError("Invalid value for argument bias_init: " + str(bias_init) + " when argument bias_mode is: " + str(bias_mode))
-		if bias_gating not in [None, self.GATE_BASE, self.GATE_HEBB, self.GATE_DIFF, self.GATE_SMAX]:
-			raise ValueError("Invalid value for argument bias_gating: " + str(bias_gating))
-		bias = None
-		if bias_init == self.BIAS_INIT_ZEROS: bias = torch.zeros(out_channels).float()
-		if bias_init == self.BIAS_INIT_VAR_ONES: bias = torch.ones(out_channels).float()
-		if bias_init == self.BIAS_INIT_VAR_DIMS: bias = utils.shape2size(tuple(self.weight[0].size())) * torch.ones(out_channels).float()
-		self.bias_mode = bias_mode
-		if self.bias_mode == self.BIAS_MODE_VALUE: self.bias = bias_init
-		else: self.bias = nn.Parameter(bias, requires_grad=True) if bias is not None else self.register_parameter('bias', None)
-		self.bias_target = bias_target
-		self.bias_gating = bias_gating
-		self.using_adaptive_bias = self.bias is not None and self.bias_mode is not None and self.bias_mode != self.BIAS_MODE_VALUE
+		# Alpha is the constant which determines the trade off between global and local updates
+		self.alpha_l = alpha_l
+		self.alpha_g = alpha_g
+		self.alpha_bias_l = alpha_bias_l
+		self.alpha_bias_g = alpha_bias_g
 		
 		# Set similarity and activation functions
 		self.lrn_sim = lrn_sim
 		self.lrn_act = lrn_act
-		self.lrn_cmp = lrn_cmp if lrn_cmp is not None else Competitive(lfb_y_gating=True) # None gives identity mapping
-		if self.lrn_cmp.out_channels is not None and self.lrn_cmp.out_channels != out_channels:
-			raise ValueError("Argument out_channels: " + str(out_channels) + " and lrn_cmp.out_channels: " + str(self.lrn_cmp.out_channels) + " must match")
+		self.lrn_bias = lrn_bias
+		self.lrn_cmp = lrn_cmp
 		self.out_sim = out_sim
 		self.out_act = out_act
-		self.out_cmp = out_cmp if out_cmp is not None else Competitive(lfb_y_gating=True) # None gives identity mapping
-		if self.out_cmp.out_channels is not None and self.out_cmp.out_channels != out_channels:
-			raise ValueError("Argument out_channels: " + str(out_channels) + " and out_cmp.out_channels: " + str(self.out_cmp.out_channels) + " must match")
+		self.out_bias = out_bias
+		self.out_cmp = out_cmp
+		self.competitive = competitive # None gives identity mapping
+		if self.competitive.out_channels is not None and self.competitive.out_channels != out_channels:
+			raise ValueError("Argument out_channels: " + str(out_channels) + " and competitive.out_channels: " + str(self.competitive.out_channels) + " must match")
 		if act_complement_init not in [None, self.ACT_COMPLEMENT_INIT_RAND, self.ACT_COMPLEMENT_INIT_SPLT, self.ACT_COMPLEMENT_INIT_ALT]:
 			raise ValueError("Invalid value for argument act_complement_init: " + str(act_complement_init))
 		if act_complement_adapt not in [None, self.ACT_COMPLEMENT_ADAPT_STB, self.ACT_COMPLEMENT_ADAPT_KRT]:
@@ -324,6 +352,26 @@ class HebbianConv2d(nn.Module):
 		self.kappa_affine = act_complement_affine
 		self.kappa_trainable = nn.Parameter(torch.zeros(out_channels).float(), requires_grad=True) if self.kappa_affine else self.register_parameter('kappa_trainable', None)
 		
+		# Init bias
+		if bias_mode not in [None, self.BIAS_MODE_BASE, self.BIAS_MODE_TARG, self.BIAS_MODE_STD, self.BIAS_MODE_PERC, self.BIAS_MODE_VAR, self.BIAS_MODE_VALUE]:
+			raise ValueError("Invalid value for argument bias_mode: " + str(bias_mode))
+		if not (isinstance(bias_init, int) or isinstance(bias_init, float) or (isinstance(bias_init, str) and bias_mode == self.BIAS_MODE_VALUE) or callable(bias_init)):
+			raise ValueError("Invalid value for argument bias_init: " + str(bias_init) + " when argument bias_mode is: " + str(bias_mode))
+		if bias_gating not in [None, self.GATE_BASE, self.GATE_HEBB, self.GATE_DIFF, self.GATE_SMAX]:
+			raise ValueError("Invalid value for argument bias_gating: " + str(bias_gating))
+		bias = None
+		if isinstance(bias_init, int) or isinstance(bias_init, float) or isinstance(bias_init, str): bias = bias_init
+		if callable(bias_init): bias = bias_init(self.weight)
+		self.bias_mode = bias_mode
+		if self.bias_mode == self.BIAS_MODE_VALUE: self.bias = bias
+		else: self.bias = nn.Parameter(bias * torch.ones(out_channels).float(), requires_grad=True) if bias is not None else self.register_parameter('bias', None)
+		self.bias_agg = bias_agg
+		self.bias_target = bias_target
+		self.bias_gating = bias_gating
+		self.bias_var_gating = bias_var_gating
+		self.using_updatable_bias = self.bias is not None and self.bias_mode != self.BIAS_MODE_VALUE
+		self.using_adaptive_bias = self.alpha_bias_l != 0 and self.using_updatable_bias and self.bias_mode is not None and self.lrn_bias
+		
 		# Learning rule
 		self.teacher_signal = None  # Teacher signal for supervised training
 		if gating not in [self.GATE_BASE, self.GATE_HEBB, self.GATE_DIFF, self.GATE_SMAX]:
@@ -332,46 +380,47 @@ class HebbianConv2d(nn.Module):
 		if reconstruction not in [None, self.REC_QNT, self.REC_QNT_SGN, self.REC_LIN_CMB]:
 			raise ValueError("Invalid value for argument reconstruction: " + str(reconstruction))
 		self.reconstruction = reconstruction
-		if upd_rule not in [self.UPD_RECONSTR, self.UPD_ICA, self.UPD_HICA, self.UPD_ICA_NRM, self.UPD_HICA_NRM]:
+		if upd_rule not in [None, self.UPD_RECONSTR, self.UPD_ICA, self.UPD_HICA, self.UPD_ICA_NRM, self.UPD_HICA_NRM]:
 			raise ValueError("Invalid value for argument upd_rule: " + str(upd_rule))
 		self.upd_rule = upd_rule
+		self.using_adaptive_weight = self.alpha_l != 0 and self.upd_rule is not None
 		self.y_prime_gating = y_prime_gating
 		if reduction not in [self.RED_AVG, self.RED_W_AVG]:
 			raise ValueError("Invalid value for argument reductioin: " + str(reduction))
 		self.reduction = reduction
 		
-		# Alpha is the constant which determines the trade off between global and local updates
-		self.alpha = alpha
-		self.alpha_bias = alpha_bias
-		
 		# Adaptive variance normalization
 		self.beta = beta # Beta is the time constant for running stats tracking
+		self.trk = nn.BatchNorm2d(out_channels, momentum=self.beta, affine=var_affine)
 		self.var_adaptive = var_adaptive
-		self.var_nrm = nn.BatchNorm2d(out_channels, momentum=self.beta, affine=var_affine) if self.var_adaptive else None
-		self.lamb = lamb # lambda is an additional spread parameter for nonlinearities. It determines, for instance, the sparsity measure when a shrinking/clamping nonlinearity is used
 		self.conserve_var = conserve_var
 		
 		# Variables where the weight updates are stored
 		self.delta_w = None
 		self.delta_bias = None
+		
+		# Whether to use FastHebb and matmul reordering optimizations
+		self.FASTHEBB = fasthebb
+		self.REORDMULT = reordmult
 	
 	def set_teacher_signal(self, t):
 		self.teacher_signal = t
 		
 	def forward(self, x):
 		if self.training: self.compute_update(x)
-		return self.out_cmp(self.apply_act(self.out_sim(x, self.weight, self.bias)))
+		out = self.apply_act(self.out_sim(x, self.weight, (self.bias.mean() if self.bias_agg else self.bias) if self.out_bias else None))
+		if self.out_cmp and self.competitive is not None: out = self.competitive(out)
+		return out
 	
 	def apply_act(self, s, lrn=False, cpl=True):
 		s_bar = s
+		
 		# Normalize before activation function, if necessary
+		if lrn: _ = self.trk(s) # Track stats
 		if self.var_adaptive:
-			if lrn: _ = self.var_nrm(s) # Track stats
-			s_bar = (s - self.var_nrm.running_mean.view(1, -1, 1, 1)) / ((self.var_nrm.running_var.view(1, -1, 1, 1) + self.var_nrm.eps) ** 0.5)
-			if self.var_nrm.affine: s_bar = s_bar * self.var_nrm.weight.view(1, -1, 1, 1) + self.var_nrm.bias.view(1, -1, 1, 1)
-			s_bar = s_bar + self.var_nrm.running_mean.view(1, -1, 1, 1) # Restore original mean and normalize variance only
-		# Scale width before activation function
-		s_bar = s_bar / self.lamb
+			s_bar = (s - self.trk.running_mean.view(1, -1, 1, 1)) / ((self.trk.running_var.view(1, -1, 1, 1) + self.trk.eps) ** 0.5)
+			if self.trk.affine: s_bar = s_bar * self.trk.weight.view(1, -1, 1, 1) + self.trk.bias.view(1, -1, 1, 1)
+			s_bar = s_bar + self.trk.running_mean.view(1, -1, 1, 1) # Restore original mean and normalize variance only
 		
 		# Apply activation function
 		y = self.lrn_act(s_bar) if lrn else self.out_act(s_bar)
@@ -382,7 +431,7 @@ class HebbianConv2d(nn.Module):
 			y = kappa * s_bar - (2 * kappa - 1) * y
 		
 		# Restore original variance information, if necessary
-		if self.conserve_var and self.var_adaptive: y = y * (self.var_nrm.running_var.view(1, -1, 1, 1) + self.var_nrm.eps)**0.5
+		if self.conserve_var and self.var_adaptive: y = y * (self.trk.running_var.view(1, -1, 1, 1) + self.trk.eps) ** 0.5
 		
 		return y
 	
@@ -391,9 +440,9 @@ class HebbianConv2d(nn.Module):
 		prev_grad_enabled = torch.is_grad_enabled()
 		torch.set_grad_enabled(False)
 		
-		if self.alpha != 0 or (self.alpha_bias != 0 and self.using_adaptive_bias) or self.var_adaptive or self.act_complement_adapt is not None:
+		if self.using_adaptive_weight or self.using_adaptive_bias or self.var_adaptive or self.act_complement_adapt is not None:
 			# Compute activation states for the layer: s, y, y'
-			s = self.lrn_sim(x, self.weight, self.bias) # Compute similarity metric between inputs and weights
+			s = self.lrn_sim(x, self.weight, (self.bias.mean() if self.bias_agg else self.bias) if self.lrn_bias else None) # Compute similarity metric between inputs and weights
 			# Compute y and also y' if y' gating is required
 			if self.y_prime_gating:
 				torch.set_grad_enabled(True) # Gradient enabling to compute derivative y'
@@ -427,7 +476,7 @@ class HebbianConv2d(nn.Module):
 				self.rho = (1 - self.beta) * self.rho + self.beta * y_uncpl_prime.mean(dim=(0, 2, 3))
 				self.kappa = ((self.m4 - self.m2 * self.rho) < 0).float()
 			
-			if self.alpha != 0 or (self.alpha_bias != 0 and self.using_adaptive_bias):
+			if self.using_adaptive_weight or self.using_adaptive_bias:
 				# Prepare the necessary tensors and set them in the correct shape
 				t = self.teacher_signal
 				if t is not None: t = t.unsqueeze(2).unsqueeze(3) * torch.ones_like(s, device=s.device)
@@ -439,102 +488,172 @@ class HebbianConv2d(nn.Module):
 				x_unf = x_unf.permute(0, 2, 3, 1, 4).contiguous().view(s.size(0), 1, -1)
 				
 				# Run competition
-				lfb_out = self.lrn_cmp(y, t)
+				cmp_res = self.competitive(y, t, lrn=True) if self.lrn_cmp and self.competitive is not None else y
 				
-				if self.alpha != 0:
+				if self.using_adaptive_weight:
 					# Compute step modulation coefficient
-					r = lfb_out  # GATE_BASE
+					r = cmp_res  # GATE_BASE
 					if self.gating == self.GATE_HEBB: r = r * y
 					if self.gating == self.GATE_DIFF: r = r - y
 					if self.gating == self.GATE_SMAX: r = r - torch.softmax(y, dim=1)
 					if self.y_prime_gating: r = y_prime * r
-					r_abs = r.abs()
-					r_sign = r.sign()
-				
+					
+					# Compute the coefficients for update reduction/aggregation over the batch.
+					# Since we use batches of inputs, we need to aggregate the different update steps of each kernel in a unique
+					# update. We do this by taking the weighted average of the steps, the weights being the r coefficients that
+					# determine the length of each step (RED_W_AVG), or the unweighted average (RED_AVG).
+					c = 1/r.size(0)
+					if self.reduction == self.RED_W_AVG:
+						r_sum = r.abs().sum(dim=0, keepdim=True)
+						r_sum = r_sum + (r_sum == 0).float()  # Prevent divisions by zero
+						c = r.abs()/r_sum
+					
 					# Compute delta_w (serialized version for computation of delta_w using less memory)
-					delta_w_avg = torch.zeros_like(self.weight.view(self.weight.size(0), -1))
+					delta_w_agg = torch.zeros_like(self.weight.view(self.weight.size(0), -1))
 					for grp in range(2): # repeat the computation for the two neuron groups using complementary nonlinearities
 						if grp == 1 and not self.act_complement_grp: break
 						grp_slice = slice(self.weight.size(0))
 						if self.act_complement_grp: grp_slice = slice(self.act_complement_from_idx) if grp == 0 else slice(self.act_complement_from_idx, self.weight.size(0))
 						w = self.weight.view(1, self.weight.size(0), -1)[:, grp_slice, :]
 						x_bar = None
+						rrlw = None
 						sw = None
-						if self.upd_rule == self.UPD_ICA or self.upd_rule == self.UPD_ICA_NRM: # Computation of s^T * W for ICA
+						
+						if self.FASTHEBB:
+							if not self.REORDMULT:
+								if self.upd_rule == self.UPD_ICA or self.upd_rule == self.UPD_ICA_NRM: # Computation of s^T * W for ICA
+									for i in range((w.size(1) // P.HEBB_UPD_GRP) + (1 if w.size(1) % P.HEBB_UPD_GRP != 0 else 0)):
+										start = i * P.HEBB_UPD_GRP
+										end = min((i + 1) * P.HEBB_UPD_GRP, w.size(1))
+										w_i = w[:, start:end, :]
+										s_i = s[:, grp_slice].unsqueeze(2)[:, start:end, :]
+										r_i = r[:, grp_slice].unsqueeze(2)[:, start:end, :]
+										sw = (r_i * s_i).view(r_i.size(0), -1).matmul(w_i.view(w_i.size(1), -1)).unsqueeze(1) + (sw if sw is not None else 0.)
+								
 							for i in range((w.size(1) // P.HEBB_UPD_GRP) + (1 if w.size(1) % P.HEBB_UPD_GRP != 0 else 0)):
 								start = i * P.HEBB_UPD_GRP
 								end = min((i + 1) * P.HEBB_UPD_GRP, w.size(1))
 								w_i = w[:, start:end, :]
 								s_i = s[:, grp_slice].unsqueeze(2)[:, start:end, :]
+								y_i = y[:, grp_slice].unsqueeze(2)[:, start:end, :]
 								r_i = r[:, grp_slice].unsqueeze(2)[:, start:end, :]
-								sw = (r_i * s_i * w_i).sum(dim=1, keepdim=True) + (sw if sw is not None else 0.)
-						for i in range((w.size(1) // P.HEBB_UPD_GRP) + (1 if w.size(1) % P.HEBB_UPD_GRP != 0 else 0)):
-							start = i * P.HEBB_UPD_GRP
-							end = min((i + 1) * P.HEBB_UPD_GRP, w.size(1))
-							w_i = w[:, start:end, :]
-							s_i = s[:, grp_slice].unsqueeze(2)[:, start:end, :]
-							y_i = y[:, grp_slice].unsqueeze(2)[:, start:end, :]
-							r_i = r[:, grp_slice].unsqueeze(2)[:, start:end, :]
-							r_abs_i = r_abs[:, grp_slice].unsqueeze(2)[:, start:end, :]
-							r_sign_i = r_sign[:, grp_slice].unsqueeze(2)[:, start:end, :]
-							# Compute update step
-							delta_w_i = torch.zeros_like(w_i)
-							if self.upd_rule == self.UPD_RECONSTR:
-								# Compute reconstr based on the type of reconstruction
-								if self.reconstruction == self.REC_QNT: x_bar = w_i
-								if self.reconstruction == self.REC_QNT_SGN: x_bar = r_sign_i * w_i
-								if self.reconstruction == self.REC_LIN_CMB: x_bar = torch.cumsum(r_i * w_i, dim=1) + (x_bar[:, -1, :].unsqueeze(1) if x_bar is not None else 0.)
-								x_bar = x_bar if x_bar is not None else 0.
-								delta_w_i = r_i * (x_unf - x_bar)
-							if self.upd_rule in [self.UPD_ICA, self.UPD_HICA, self.UPD_ICA_NRM, self.UPD_HICA_NRM]:
-								if self.upd_rule == self.UPD_HICA or self.upd_rule == self.UPD_HICA_NRM:
-									sw = torch.cumsum((r_i * s_i) * w_i, dim=1) + (sw[:, -1, :].unsqueeze(1) if sw is not None else 0.)
-								ysw = (y_i * sw)
-								if self.upd_rule == self.UPD_ICA or self.upd_rule == self.UPD_HICA:
-									delta_w_i = r_i * (w_i - ysw)
-								if self.upd_rule == self.UPD_ICA_NRM or self.upd_rule == self.UPD_HICA_NRM:
-									delta_w_i = r_i * ((ysw * w_i).sum(dim=2, keepdim=True) * w_i - ysw)
-							# Since we use batches of inputs, we need to aggregate the different update steps of each kernel in a unique
-							# update. We do this by taking the weighted average of the steps, the weights being the r coefficients that
-							# determine the length of each step (RED_W_AVG), or the unweighted average (RED_AVG).
-							if self.reduction == self.RED_W_AVG:
-								r_sum = r_abs_i.sum(0)
-								r_sum = r_sum + (r_sum == 0).float()  # Prevent divisions by zero
-								delta_w_avg[grp_slice, :][start:end, :] = (delta_w_i * r_abs_i).sum(0) / r_sum
-							else: # RED_AVG
-								delta_w_avg[grp_slice, :][start:end, :] = delta_w_i.mean(dim=0)
+								c_i = c[:, grp_slice].unsqueeze(2)[:, start:end, :] if isinstance(c, torch.Tensor) else c
+								rc = r_i * c_i
+								
+								# Compute update step
+								delta_w_i = torch.zeros_like(w_i)
+								if self.upd_rule == self.UPD_RECONSTR:
+									delta_w_i = rc.view(rc.size(0), -1).t().matmul(x_unf.view(x_unf.size(0), -1))
+									# Compute reconstr based on the type of reconstruction
+									if self.reconstruction == self.REC_QNT: delta_w_i = delta_w_i - rc.sum(0) * w_i.view(w_i.size(1), -1)
+									elif self.reconstruction == self.REC_QNT_SGN: delta_w_i = delta_w_i - rc.permute(1, 2, 0).matmul(r_i.sign().permute(1, 0, 2)).view(-1, 1) * w_i.view(w_i.size(1), -1)
+									elif self.reconstruction == self.REC_LIN_CMB:
+										if self.REORDMULT:
+											l_i = torch.ones([w_i.size(1), w_i.size(1)], device=w_i.device).float().tril()
+											rrlw = (rc.view(rc.size(0), -1).t().matmul(r_i.view(r_i.size(0), -1)) * l_i).matmul(w_i.view(w_i.size(1), -1)) + (rrlw[-1, :] if rrlw is not None else 0.)
+											delta_w_i = delta_w_i - rrlw
+										else:
+											x_bar = torch.cumsum(r_i * w_i, dim=1) + (x_bar[:, -1, :].unsqueeze(1) if x_bar is not None else 0.)
+											delta_w_i = delta_w_i - rc.permute(1, 2, 0).matmul(x_bar.permute(1, 0, 2)).view(w_i.size(1), -1)
+								if self.upd_rule in [self.UPD_ICA, self.UPD_HICA, self.UPD_ICA_NRM, self.UPD_HICA_NRM]:
+									if self.REORDMULT:
+										if self.upd_rule == self.UPD_HICA or self.upd_rule == self.UPD_HICA_NRM:
+											l_i = (torch.arange(end, device=w.device).unsqueeze(0).repeat(w_i.size(1), 1) <= torch.arange(start, end).unsqueeze(1)).float()
+											rysw = rc.permute(1, 2, 0).matmul((y_i * (r * s).view(s.size(0), 1, -1) * l_i.unsqueeze(0)).permute(1, 0, 2)).view(rc.size(1), -1).matmul(w.view(w.size(1), -1)[:end, :])
+										else:
+											rysw = rc.permute(1, 2, 0).matmul((y_i * (r * s).view(s.size(0), 1, -1)).permute(1, 0, 2)).view(rc.size(1), -1).matmul(w.view(w.size(1), -1))
+									else:
+										if self.upd_rule == self.UPD_HICA or self.upd_rule == self.UPD_HICA_NRM:
+											sw = torch.cumsum((r_i * s_i) * w_i, dim=1) + (sw[:, -1, :].unsqueeze(1) if sw is not None else 0.)
+										rysw = rc.permute(1, 2, 0).matmul((y_i * sw).permute(1, 0, 2)).view(w_i.size(1), -1)
+									if self.upd_rule == self.UPD_ICA or self.upd_rule == self.UPD_HICA:
+										delta_w_i = rc.sum(0) * w_i.view(w_i.size(1), -1) - rysw
+									if self.upd_rule == self.UPD_ICA_NRM or self.upd_rule == self.UPD_HICA_NRM:
+										delta_w_i = rysw.unsqueeze(1).matmul(w_i.view(w_i.size(1), -1, 1)).view(-1, 1) * w_i.view(w_i.size(1), -1) - rysw
+										
+								# Store aggregated update in buffer
+								delta_w_agg[grp_slice, :][start:end, :] = delta_w_i
+								
+						else:
+							if self.upd_rule == self.UPD_ICA or self.upd_rule == self.UPD_ICA_NRM: # Computation of s^T * W for ICA
+								for i in range((w.size(1) // P.HEBB_UPD_GRP) + (1 if w.size(1) % P.HEBB_UPD_GRP != 0 else 0)):
+									start = i * P.HEBB_UPD_GRP
+									end = min((i + 1) * P.HEBB_UPD_GRP, w.size(1))
+									w_i = w[:, start:end, :]
+									s_i = s[:, grp_slice].unsqueeze(2)[:, start:end, :]
+									r_i = r[:, grp_slice].unsqueeze(2)[:, start:end, :]
+									sw = (r_i * s_i * w_i).sum(dim=1, keepdim=True) + (sw if sw is not None else 0.)
+							
+							for i in range((w.size(1) // P.HEBB_UPD_GRP) + (1 if w.size(1) % P.HEBB_UPD_GRP != 0 else 0)):
+								start = i * P.HEBB_UPD_GRP
+								end = min((i + 1) * P.HEBB_UPD_GRP, w.size(1))
+								w_i = w[:, start:end, :]
+								s_i = s[:, grp_slice].unsqueeze(2)[:, start:end, :]
+								y_i = y[:, grp_slice].unsqueeze(2)[:, start:end, :]
+								r_i = r[:, grp_slice].unsqueeze(2)[:, start:end, :]
+								c_i = c[:, grp_slice].unsqueeze(2)[:, start:end, :] if isinstance(c, torch.Tensor) else c
+								
+								# Compute update step
+								delta_w_i = torch.zeros_like(w_i)
+								if self.upd_rule == self.UPD_RECONSTR:
+									# Compute reconstr based on the type of reconstruction
+									if self.reconstruction == self.REC_QNT: x_bar = w_i
+									elif self.reconstruction == self.REC_QNT_SGN: x_bar = r_i.sign() * w_i
+									elif self.reconstruction == self.REC_LIN_CMB: x_bar = torch.cumsum(r_i * w_i, dim=1) + (x_bar[:, -1, :].unsqueeze(1) if x_bar is not None else 0.)
+									else: x_bar = 0.
+									delta_w_i = r_i * (x_unf - x_bar)
+								if self.upd_rule in [self.UPD_ICA, self.UPD_HICA, self.UPD_ICA_NRM, self.UPD_HICA_NRM]:
+									if self.upd_rule == self.UPD_HICA or self.upd_rule == self.UPD_HICA_NRM:
+										sw = torch.cumsum((r_i * s_i) * w_i, dim=1) + (sw[:, -1, :].unsqueeze(1) if sw is not None else 0.)
+									ysw = (y_i * sw)
+									if self.upd_rule == self.UPD_ICA or self.upd_rule == self.UPD_HICA:
+										delta_w_i = r_i * (w_i - ysw)
+									if self.upd_rule == self.UPD_ICA_NRM or self.upd_rule == self.UPD_HICA_NRM:
+										delta_w_i = r_i * ((ysw * w_i).sum(dim=2, keepdim=True) * w_i - ysw)
+								
+								# Aggregate updates over batch
+								delta_w_agg[grp_slice, :][start:end, :] = (delta_w_i * c_i).sum(0)
 					
-					# Apply delta
-					self.delta_w = delta_w_avg.view_as(self.weight)
+					# Store delta
+					self.delta_w = delta_w_agg.view_as(self.weight)
 				
-				if self.alpha_bias != 0 and self.using_adaptive_bias:
+				if self.using_adaptive_bias:
 					# Compute step modulation coefficient
-					r = lfb_out  # GATE_BASE
+					r = cmp_res  # GATE_BASE
 					if self.bias_gating == self.GATE_HEBB: r = r * y
 					if self.bias_gating == self.GATE_DIFF: r = r - y
 					if self.bias_gating == self.GATE_SMAX: r = r - torch.softmax(y, dim=1)
 					if self.bias_gating is None: r = 1.
 					if self.y_prime_gating: r = y_prime * r
-					r_abs = r.abs()
-					r_sign = r.sign()
+					if self.bias_var_gating: r = r * s * (-torch.log(s) / self.bias.view(1, -1, 1, 1))
+					
+					# Compute the coefficients for update reduction/aggregation over the batch.
+					c = 1/r.size(0)
+					if self.reduction == self.RED_W_AVG:
+						r_sum = r.abs().sum(dim=0, keepdim=True)
+						r_sum = r_sum + (r_sum == 0).float()  # Prevent divisions by zero
+						c = r.abs()/r_sum
 					
 					# Compute Delta bias
 					delta_bias = torch.zeros_like(self.bias).unsqueeze(0)
-					delta_bias_avg = torch.zeros_like(self.bias)
 					if self.bias_mode == self.BIAS_MODE_BASE:
 						delta_bias = r
-					if self.bias_mode == self.BIAS_MODE_HEBB:
-						delta_bias = r * -(s - self.bias_target)
-					# Aggregate bias updates by averaging
-					if self.reduction == self.RED_W_AVG:
-						r_sum = r_abs.sum(0)
-						r_sum = r_sum + (r_sum == 0).float()  # Prevent divisions by zero
-						delta_bias_avg = (delta_bias * r_abs).sum(0) / r_sum
-					else: # RED_AVG
-						delta_bias_avg = delta_bias.mean(dim=0)
+					if self.bias_mode == self.BIAS_MODE_TARG:
+						# NB: self.bias_target is the target mean that we wish to achieve
+						delta_bias = r * (self.bias_target - s)
+					if self.bias_mode == self.BIAS_MODE_STD:
+						# NB: self.bias_target is the number of std devs away from the mean that we wish to achieve
+						delta_bias = r * (self.bias_target * (self.trk.running_var ** 0.5).view(1, -1, 1, 1) - s)
+					if self.bias_mode == self.BIAS_MODE_PERC:
+						# NB: self.bias target is the target percentile of samples above zero that we wish to achieve
+						delta_bias = r * ((s < 0).float() - self.bias_target)
+					if self.bias_mode == self.BIAS_MODE_VAR:
+						# NB: 1/self.bias_target is the number of variances (when the bias is used as variance of
+						# rbf-like similarity functions) that we wish to achieve
+						delta_bias = r * (-torch.log(s) * self.bias.view(1, -1, 1, 1)/self.bias_target - self.bias.view(1, -1, 1, 1))
 					
-					# Apply delta
-					self.delta_bias = delta_bias_avg.view_as(self.bias)
+					# Aggregate updates over the batch and store delta
+					self.delta_bias = c.t().unsqueeze(1).matmul(delta_bias.t().unsqueeze(2)).view_as(self.bias)
 		
 		# Restore gradient computation
 		torch.set_grad_enabled(prev_grad_enabled)
@@ -542,10 +661,14 @@ class HebbianConv2d(nn.Module):
 	# Takes local update from self.delta_w and self.delta_bias, global update from self.weight.grad and self.bias.grad,
 	# and combines them using the parameter alpha.
 	def local_update(self):
-		if self.alpha != 0:
+		if self.delta_w is not None or self.weight.grad is not None:
 			# NB: self.delta_w has a minus sign in front because the optimizer will take update steps in the opposite direction.
-			self.weight.grad = self.alpha * (-self.delta_w) + (1 - self.alpha) * (self.weight.grad if self.weight.grad is not None else 0.)
-		if self.alpha_bias != 0 and self.using_adaptive_bias:
+			self.weight.grad = self.alpha_l * (-self.delta_w if self.delta_w is not None else 0.) \
+			                   + self.alpha_g * (self.weight.grad if self.weight.grad is not None else 0.)
+			self.delta_w = None
+		if self.using_updatable_bias and (self.delta_bias is not None or self.bias.grad is not None):
 			# NB: self.delta_bias has a minus sign in front because the optimizer will take update steps in the opposite direction.
-			self.bias.grad = self.alpha_bias * (-self.delta_bias) + (1 - self.alpha_bias) * (self.bias.grad if self.bias.grad is not None else 0.)
+			self.bias.grad = self.alpha_bias_l * (-self.delta_bias if self.delta_bias is not None else 0.) \
+			                 + self.alpha_bias_g * (self.bias.grad if self.bias.grad is not None else 0.)
+			self.delta_bias = None
 

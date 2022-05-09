@@ -13,17 +13,17 @@ class Model(nn.Module):
 		# Shape of the tensors that we expect to receive as x
 		self.INPUT_SHAPE = input_shape if input_shape is not None else P.GLB_PARAMS[P.KEY_DATASET_METADATA][P.KEY_DS_INPUT_SHAPE]
 	
-	# Return module x shape
+	# Return module input shape
 	def get_input_shape(self):
 		return self.INPUT_SHAPE
 	
-	# This function forwards an x through the convolutional layers and computes the resulting output
+	# This function forwards an input through the convolutional layers and computes the resulting output
 	def get_conv_output(self, x):
 		raise NotImplementedError
 	
-	# Feeds the network with a simulated x and compute the corresponding output feature map from any layer of a network.
+	# Feeds the network with a simulated input and compute the corresponding output feature map from any layer of a network.
 	# This is useful to get the shape of network outputs (together with utils.tens2shape) in order to correctly set the
-	# size of the successive layers or the x shape of successive processing stages. By default, the method considers
+	# size of the successive layers or the input shape of successive processing stages. By default, the method considers
 	# only convolutional layers. If fwd is true, all layers are considered.
 	def get_dummy_fmap(self, fwd=False):
 		training = self.training

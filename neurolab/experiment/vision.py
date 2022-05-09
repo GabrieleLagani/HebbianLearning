@@ -44,7 +44,7 @@ class VisionExperiment(Experiment):
 		# Plot weight visualizations
 		KNL_PLT_PATH = os.path.join(self.config.FIGURE_FOLDER, 'kernels.png')
 		KNL_INV_PLT_PATH = os.path.join(self.config.FIGURE_FOLDER, 'kernels_inv.png')
-		if len(self.pre_net_list) == 0:  # the network is directly attached to the x image
+		if len(self.pre_net_list) == 0:  # the network is directly attached to the input image
 			w = None
 			if hasattr(self.net_list[0], 'conv1'): w = self.net_list[0].conv1.weight
 			if hasattr(self.net_list[0], 'fc'): w = self.net_list[0].fc.weight.view(-1, *self.net_list.get_input_shape())
@@ -80,7 +80,7 @@ class VisionExperiment(Experiment):
 		inputs, targets, batch_count = self.prepare_batch(batch)
 		
 		# Feed inputs to pre-processing networks
-		for i in range(len(self.pre_net_list)): inputs = self.select_output(self.pre_net_list[i](inputs), i) # Let the network process the x
+		for i in range(len(self.pre_net_list)): inputs = self.select_output(self.pre_net_list[i](inputs), i) # Let the network process the ipnut
 		
 		# Start gradient tracking if required
 		torch.set_grad_enabled(self.loss is not None and self.net_list[-1].training)
@@ -90,7 +90,7 @@ class VisionExperiment(Experiment):
 			# Set teacher signal (for local learning rules)
 			if self.net_list[i].training: self.net_list[i].set_teacher_signal(targets)
 			# Forward step. Select the output from the required layer and prepare it in the correct form expected by successive processing stages
-			outputs = self.select_output(self.net_list[i](outputs if i > 0 else inputs), len(self.pre_net_list) + i) # Let the network process the x
+			outputs = self.select_output(self.net_list[i](outputs if i > 0 else inputs), len(self.pre_net_list) + i) # Let the network process the input
 			# Unset teacher signal (for local learning rules)
 			if self.net_list[i].training: self.net_list[i].set_teacher_signal(None)
 		
@@ -101,6 +101,7 @@ class VisionExperiment(Experiment):
 				loss = self.loss(outputs, targets)  # compute loss
 				loss.backward()  # Backward step (compute gradients)
 			for i in range(len(self.net_list)): self.net_list[i].local_updates() # Another backward step, apply weight updates computed from local learning rules
+			self.precond_grads() # Apply pre-conditioning to gradients
 			self.optimizer.step()  # Optimize (update weights)
 		
 		# Stop gradient tracking
