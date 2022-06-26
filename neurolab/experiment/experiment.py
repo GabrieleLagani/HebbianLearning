@@ -22,6 +22,7 @@ class Experiment:
 		
 		# Initialize experiment state variables
 		self.current_epoch = 0 # The current epoch of training process
+		self.early_stop = self.config.CONFIG_OPTIONS.get(P.KEY_EARLY_STOP, True)
 		self.train_result_data = {} # Dictionary of sequences of training results over time
 		self.val_result_data = {} # Dictionary of sequences of validation results over time
 		self.last_eval_epoch = 0 # Epoch at which last evaluation occurred
@@ -145,14 +146,15 @@ class Experiment:
 		net_list = []
 		net_modules = self.config.CONFIG_OPTIONS[P.KEY_NET_MODULES]
 		net_mdl_paths = self.config.CONFIG_OPTIONS.get(P.KEY_NET_MDL_PATHS, None)
+		testing_saved_model = (self.config.MODE == P.MODE_TST and self.config.CONFIG_OPTIONS[P.KEY_NUM_EPOCHS] > 0)
 		for i in range(len(net_modules)):
 			# Load network models
 			if i > 0: input_shape = utils.tens2shape(self.select_output(net_list[i - 1].get_dummy_fmap(fwd=True), len(pre_net_list) + i - 1))
 			net_list += [utils.retrieve(net_modules[i])(config=self.config, input_shape=input_shape)]
-			if self.config.MODE == P.MODE_TST or (net_mdl_paths is not None and i < len(net_mdl_paths) and net_mdl_paths[i] is not None):
+			if testing_saved_model or (net_mdl_paths is not None and i < len(net_mdl_paths) and net_mdl_paths[i] is not None):
 				# Load network model to be tested or pre-trained network model for fine tuning
 				self.logger.print_and_log("Searching for available saved model for network " + str(i) + "...")
-				loaded_model = utils.load_dict(self.config.SAVED_MDL_PATHS[i] if self.config.MODE == P.MODE_TST else net_mdl_paths[i])
+				loaded_model = utils.load_dict(self.config.SAVED_MDL_PATHS[i] if testing_saved_model else net_mdl_paths[i])
 				if loaded_model is not None:
 					net_list[i].load_state_dict(loaded_model)
 					self.logger.print_and_log("Model loaded!")
@@ -239,11 +241,17 @@ class Experiment:
 			self.logger.print_and_log("Saving new best models...")
 			for i in range(len(self.net_list)):
 				self.best_model_dicts[i] = copy.deepcopy(self.net_list[i].state_dict())
-				utils.save_dict(self.best_model_dicts[i], self.config.SAVED_MDL_PATHS[i])
+				if self.early_stop: utils.save_dict(self.best_model_dicts[i], self.config.SAVED_MDL_PATHS[i])
 			self.logger.print_and_log("Models saved!")
 		else:
 			for perc in self.convergence_epochs.keys(): self.logger.print_and_log("{}% convergence epoch {}/{}".format(100 * perc, self.convergence_epochs[perc], self.config.CONFIG_OPTIONS[P.KEY_NUM_EPOCHS]))
-		
+		if not self.early_stop:
+			# Convert model to dict and save
+			self.logger.print_and_log("Saving new models...")
+			for i in range(len(self.net_list)):
+				utils.save_dict(self.net_list[i].state_dict(), self.config.SAVED_MDL_PATHS[i])
+			self.logger.print_and_log("Models saved!")
+			
 		# Save plots
 		self.logger.print_and_log("Saving plots...")
 		self.save_plots()
@@ -254,10 +262,12 @@ class Experiment:
 		utils.update_csv(self.config.ITER_ID, self.best_epoch, os.path.join(self.config.RESULT_BASE_FOLDER, 'convergence_epoch.csv'), ci_levels=P.DEFAULT_CI_LEVELS)
 		for perc in self.convergence_epochs.keys():
 			utils.update_csv(self.config.ITER_ID, self.convergence_epochs[perc], os.path.join(self.config.RESULT_BASE_FOLDER, 'convergence_epoch_' + str(100*perc) + '_perc.csv'), ci_levels=P.DEFAULT_CI_LEVELS)
-		for i in range(len(self.net_list)): utils.save_dict(self.best_model_dicts[i], self.config.SAVED_MDL_PATHS[i])
+		for i in range(len(self.net_list)):
+			if self.early_stop: utils.save_dict(self.best_model_dicts[i], self.config.SAVED_MDL_PATHS[i])
+			else: utils.save_dict(self.net_list[i].state_dict(), self.config.SAVED_MDL_PATHS[i])
 		self.save_plots()
 	
-	# Mothod containing logic of an evaluation pass
+	# Method containing logic of an evaluation pass
 	def eval_pass(self):
 		raise NotImplementedError
 	

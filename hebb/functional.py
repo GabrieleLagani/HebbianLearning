@@ -1,8 +1,21 @@
 import math
 import torch
+import torch.nn as nn
 import torch.nn.functional as F
 
 from neurolab import utils
+
+
+# Euclidean distance between vectors
+def dist(x, y):
+	return (x.norm(p=2, dim=1).pow(2).view(-1, 1) + y.norm(p=2, dim=1).pow(2).view(1, -1) - 2 * x.matmul(y.t())) ** 0.5
+
+
+# Standard weight initialization method, default used in pytorch conv modules (the one from the paper "Efficient Backprop, LeCun")
+def weight_init_std(w):
+	stdv = 1 / (utils.shape2size(w[0].size())) ** 0.5
+	torch.nn.init.uniform_(w, -stdv, stdv)
+	return w
 
 
 # Apply unfold operation to input in order to prepare it to be processed against a sliding kernel whose shape
@@ -50,23 +63,6 @@ def kernel_sum2d(input, kernel):
 	out = inp_unf + kernel.view(1, kernel.size(0), 1, 1, -1)
 	return out
 
-
-# Euclidean distance between vectors
-def dist(x, y):
-	return (x.norm(p=2, dim=1).pow(2).view(-1, 1) + y.norm(p=2, dim=1).pow(2).view(1, -1) - 2 * x.matmul(y.t())) ** 0.5
-
-
-# A modified batchnorm layer that preserves per-feature relative variance information. This is done by multiplying the
-# output of an ordinary bn layer by a coefficient given by the ratio between the running variance and the aggregated
-# (average) running variances, so that variables will preserve their relative variance, while remaining normalized
-# (unit variance) on average.
-def modified_bn(bn_layer, input):
-	shape = (1, -1, *(1 for _ in range(len(input.size()) - 2)))
-	out = bn_layer(input)
-	out *= ((bn_layer.running_var.view(*shape) + bn_layer.eps)/(bn_layer.running_var.mean() + bn_layer.eps))**0.5
-	return out
-
-
 # Compute product between input and sliding kernel
 def kernel_mult2d(x, w, bias=None):
 	if bias is None: bias = 0.
@@ -103,45 +99,45 @@ def ang_sim2d(x, w, bias=None):
 	return s + bias
 
 # Cosine similarity remapped to 0, 1
-def raised_cos_sim2d(x, w, var=None):
+def raised_cos_sim2d(x, w, bias=None):
 	nc = nc_raised_cos_sim
 	s = (cos_sim2d(x, w) + 1) / 2
-	act_var = None
-	if var is None: act_var = 1.
-	if var == 'nc': act_var = nc(w)
-	if isinstance(var, torch.Tensor): act_var = var.view(1, -1, 1, 1)
-	if act_var is None: raise ValueError("Invalid value for parameter var: " + str(var))
-	return s.pow(1/act_var)
+	b = None
+	if bias is None: b = 1.
+	if bias == 'nc': b = nc(w)
+	if isinstance(bias, torch.Tensor): b = bias.view(1, -1, 1, 1)
+	if b is None: raise ValueError("Invalid value for parameter bias: " + str(bias))
+	return s.pow(b)
 # Corresponding normalization condition functions for heuristic variance determination
 def nc_raised_cos_sim(w):
-	return -math.log( (1 + torch.cos( 1 / (w.size(0) ** (1 / (utils.shape2size(tuple(w[0].size()))))) )) / 2 )
+	return 1/(-math.log( (1 + torch.cos( 1 / (w.size(0) ** (1 / (utils.shape2size(tuple(w[0].size()))))) )) / 2 ))
 
 # Angular similarity remapped to 0, 1
-def raised_ang_sim2d(x, w, var=None):
+def raised_ang_sim2d(x, w, bias=None):
 	nc = nc_raised_ang_sim
 	s = (ang_sim2d(x, w) + 1) / 2
-	act_var = None
-	if var is None: act_var = 1.
-	if var == 'nc': act_var = nc(w)
-	if isinstance(var, torch.Tensor): act_var = var.view(1, -1, 1, 1)
-	if act_var is None: raise ValueError("Invalid value for parameter var: " + str(var))
-	return s.pow(1/act_var)
+	b = None
+	if bias is None: b = 1.
+	if bias == 'nc': b = nc(w)
+	if isinstance(bias, torch.Tensor): b = bias.view(1, -1, 1, 1)
+	if b is None: raise ValueError("Invalid value for parameter bias: " + str(bias))
+	return s.pow(b)
 # Corresponding normalization condition functions for heuristic variance determination
 def nc_raised_ang_sim(w):
-	return -math.log( 1 - 1 / (w.size(0) ** (1 / (utils.shape2size(tuple(w[0].size()))))) )
+	return 1/(-math.log( 1 - 1 / (w.size(0) ** (1 / (utils.shape2size(tuple(w[0].size()))))) ))
 
 # Get exponential similarity function e^(-f^p/var)
 def get_exp_sim(f, nc=None):
-	def exp_sim(x, w, var=None):
+	def exp_sim(x, w, bias=None):
 		d = f(x, w)
-		act_var = None
-		if var is None: act_var = 1.
-		if var == 'nc':
+		b = None
+		if bias is None: b = 1.
+		if bias == 'nc':
 			if nc is None: raise ValueError("Normalization condition was invoked but no corresponding function was provided")
-			act_var = nc(w)
-		if isinstance(var, torch.Tensor): act_var = var.view(1, -1, 1, 1)
-		if act_var is None: raise ValueError("Invalid value for parameter var: " + str(var))
-		return torch.exp(-d/act_var)
+			b = nc(w)
+		if isinstance(bias, torch.Tensor): b = bias.view(1, -1, 1, 1)
+		if b is None: raise ValueError("Invalid value for parameter bias: " + str(bias))
+		return torch.exp(-d * b)
 	return exp_sim
 # Distance functions for the exponential similarity
 def dist_euclid(x, w): # Euclidean distance for gauss-rbf similarity
@@ -155,11 +151,11 @@ def dist_ang(x, w): # Angular distance
 	return torch.acos(cos_sim)/math.pi
 # Normalization condition functions for heuristic variance determination
 def nc_base(w):
-	return 1 / (w.size(0) ** (1 / (utils.shape2size(tuple(w[0].size())))))
+	return w.size(0) ** (1 / (utils.shape2size(tuple(w[0].size()))))
 def nc_max_dist(w):
-	return dist(w.view(w.size(0), -1), w.view(w.size(0), -1)).max().detach().item() * nc_base(w)
+	return nc_base(w) / dist(w.view(w.size(0), -1), w.view(w.size(0), -1)).max().detach().item()
 def nc_cos_dist(w):
-	return (1 - torch.cos(math.pi * nc_base(w)).detach().item())/2
+	return 2 / (1 - torch.cos(math.pi / nc_base(w)).detach().item())
 def nc_ang_dist(w):
 	return nc_base(w)
 
@@ -181,7 +177,7 @@ def identity(x):
 
 # Step nonlinearity
 def step(x):
-	return (x > 0).float()
+	return (x >= 0).float()
 
 # Relu nonlinearity
 def relu(x):
@@ -264,4 +260,93 @@ def esoftwta(x, k=1, t=None):
 def threshcomp(x, k=0, t=None):
 	if t is not None: x = x * t # Teacher signal is used to drive competition, if provided
 	return (x + k > 0).float()
+
+
+# A modified batchnorm layer that preserves per-feature relative variance information. This is done by multiplying the
+# output of an ordinary bn layer by a coefficient given by the ratio between the running variance and the aggregated
+# (average) running variances, so that variables will preserve their relative variance, while remaining normalized
+# (unit variance) on average.
+def modified_bn(bn_layer, input):
+	shape = (1, -1, *(1 for _ in range(len(input.size()) - 2)))
+	out = bn_layer(input)
+	out *= ((bn_layer.running_var.view(*shape) + bn_layer.eps)/(bn_layer.running_var.mean() + bn_layer.eps))**0.5
+	return out
+
+
+# A custom module that takes a constant and transforms it into a parameter that is function of other parameters,
+# thus giving a gradient correction in the backward pass
+class GradCorrector(nn.Module):
+	def __init__(self):
+		super(GradCorrector, self).__init__()
+		self.Fn = None
+	
+	def forward(self, x, p):
+		return p
+
+# A gradient corrector for a mean parameter
+class MeanGradCorrector(GradCorrector):
+	def __init__(self, beta=0.1):
+		super().__init__()
+		
+		class Fn(torch.autograd.Function):
+			@staticmethod
+			def forward(ctx, x, p):
+				ctx.save_for_backward(x, p)
+				return p
+			
+			@staticmethod
+			def backward(ctx, e):
+				x, p = ctx.saved_tensors
+				N = x.size(0) * x.size(2)
+				self.track(x, p, e)
+				grad_x = self.running_e.view(1, -1, 1) * torch.ones_like(x).float() / N
+				return grad_x, e
+		
+		self.Fn = Fn
+		
+		self.register_buffer('running_e', torch.tensor(0.))
+		
+		self.beta = beta
+	
+	def track(self, x, p, e):
+		self.running_e = self.running_e + self.beta * (e - self.running_e)
+		
+	def forward(self, x, p):
+		return self.Fn.apply(x, p)
+
+
+# A gradient corrector for a standard deviation parameter
+class StdGradCorrector(GradCorrector):
+	def __init__(self, beta=0.1):
+		super().__init__()
+		
+		class Fn(torch.autograd.Function):
+			@staticmethod
+			def forward(ctx, x, p):
+				ctx.save_for_backward(x, p)
+				return p
+			
+			@staticmethod
+			def backward(ctx, e):
+				x, p = ctx.saved_tensors
+				N = x.size(0) * x.size(2)
+				self.track(x, p, e)
+				grad_x = self.running_e.view(1, -1, 1) * (x - self.running_x.view(1, -1, 1)) / (p * N)
+				return grad_x, e
+		
+		self.Fn = Fn
+		
+		self.register_buffer('running_x', torch.tensor(0.))
+		self.register_buffer('running_e', torch.tensor(0.))
+		
+		self.beta = beta
+	
+	def track(self, x, p, e):
+		mean = x.mean(dim=(0, 2))
+		self.running_x = self.running_x + self.beta * (mean - self.running_x)
+		self.running_e = self.running_e + self.beta * (e - self.running_e)
+		
+	def forward(self, x, p):
+		return self.Fn.apply(x, p)
+
 

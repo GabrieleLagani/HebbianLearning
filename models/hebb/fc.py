@@ -20,12 +20,13 @@ class Net(Model):
 		# Here we define the layers of our network
 		
 		self.fc = H.HebbianConv2d(
-			in_channels=4096,
+			in_channels=self.get_input_shape()[0],
 			out_channels=self.NUM_CLASSES,
 			kernel_size=1,
-			lrn_sim=HF.get_affine_sim(HF.raised_cos_sim2d, 1 / 2),
+			lrn_sim=HF.get_affine_sim(HF.raised_cos_sim2d, p=2),
 			lrn_act=HF.identity,
 			lrn_cmp=True,
+			lrn_t=True,
 			out_sim=HF.vector_proj2d if self.ALPHA_G == 0. else HF.kernel_mult2d,
 			out_act=HF.identity,
 			competitive=H.Competitive(),

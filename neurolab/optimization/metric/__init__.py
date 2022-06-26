@@ -6,4 +6,3 @@ from .prec import *
 from .map import *
 from .elbo import *
 from .crossent_elbo import *
-from .prog import *

@@ -1,7 +1,9 @@
-HEBB_UPD_GRP = 8 # In the Hebbian module, how many kernels to update in parallel on GPU. Larger is faster, but make it smaller to avoid memory overflow.
+HEBB_UPD_GRP = 128 # In the Hebbian module, how many kernels to update in parallel on GPU. Larger is faster, but make it smaller to avoid memory overflow.
+HEBB_FASTHEBB = True # Whether to use fast hebbian update computation based on matmul
+HEBB_REORDMULT = True # Whether to use multiplication reordering with early batch-wise aggregation
 KEY_VAE_NUM_LATENT_VARS = 'vae_num_latent_vars'
-KEY_WTA_COMPETITIVE_ACT = 'wta_competitive_act'
-KEY_WTA_K = 'wta_k'
+KEY_COMPETITIVE_ACT = 'competitive_act'
+KEY_COMPETITIVE_K = 'competitive_k'
 KEY_ACT_COMPLEMENT_INIT = 'act_complement_init'
 KEY_ACT_COMPLEMENT_RATIO = 'act_complement_ratio'
 KEY_ACT_COMPLEMENT_ADAPT = 'act_complement_adapt'

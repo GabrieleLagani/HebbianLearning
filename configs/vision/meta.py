@@ -14,9 +14,6 @@ lrn_rule_competitive_act = {'hpca': None, 'hpca_dts': None, 'hpcat': None, 'hpca
 lrn_rule_k = {'hpca': 0, 'hpca_dts': 0, 'hpcat': 0, 'hpcat_dts': 0, 'hpcat_ada': 0, 'hpcat_ada_dts': 0,
               'ica': 0, 'ica_dts': 0, 'ica_nrm': 0, 'ica_nrm_dts': 0,
               '1wta': 1, '1wta_dts': 1, '5wta': 5, '5wta_dts': 5, 'eswta': .02, 'eswta_dts': .02, 'pswta': .05, 'pswta_dts': .05}
-lrn_rule_lamb = {'hpca': 1, 'hpca_dts': 1, 'hpcat': 1, 'hpcat_dts': 1, 'hpcat_ada': 1, 'hpcat_ada_dts': 1,
-                 'ica': 1, 'ica_dts': 1, 'ica_nrm': 1, 'ica_nrm_dts': 1,
-                 '1wta': 1, '1wta_dts': 1, '5wta': 1, '5wta_dts': 1, 'eswta': 1, 'eswta_dts': 1, 'pswta': 1, 'pswta_dts': 1}
 hebbreg_coeffs = [-1e-3, -5e-4, -1e-4, -5e-5, 0., 5e-5, 1e-4, 5e-4, 1e-3, 5e-3, 1e-2]
 
 datasets = ['mnist', 'cifar10', 'cifar100', 'tinyimagenet', 'imagenet']
@@ -31,9 +28,19 @@ input_shapes = {'mnist': (3, 32, 32), 'cifar10': (3, 32, 32), 'cifar100': (3, 32
 batch_sizes = {'mnist': 64, 'cifar10': 64, 'cifar100': 64, 'tinyimagenet': 64, 'imagenet': 32}
 num_layers = {'mnist': 6, 'cifar10': 6, 'cifar100': 6, 'tinyimagenet': 6, 'imagenet': 10}
 net_outputs = {'mnist': 'fc6', 'cifar10': 'fc6', 'cifar100': 'fc6', 'tinyimagenet': 'fc6', 'imagenet': 'fc10'}
+hebb_lrn_rates = {'hpca': {'mnist': 1e-3, 'cifar10': 1e-3, 'cifar100': 1e-3, 'tinyimagenet': 1e-3, 'imagenet': 1e-4},
+                 'hpcat': {'mnist': 1e-3, 'cifar10': 1e-3, 'cifar100': 1e-3, 'tinyimagenet': 1e-3, 'imagenet': 1e-4},
+                 'hpcat_ada': {'mnist': 1e-3, 'cifar10': 1e-3, 'cifar100': 1e-3, 'tinyimagenet': 1e-3, 'imagenet': 1e-4},
+                 'ica': {'mnist': 1e-3, 'cifar10': 1e-3, 'cifar100': 1e-3, 'tinyimagenet': 1e-3, 'imagenet': 1e-4},
+                 'ica_nrm': {'mnist': 1e-3, 'cifar10': 1e-3, 'cifar100': 1e-3, 'tinyimagenet': 1e-3, 'imagenet': 1e-4},
+                 'hwta': {'mnist': 1e-3, 'cifar10': 1e-3, 'cifar100': 1e-3, 'tinyimagenet': 1e-3, 'imagenet': 1e-3}
+                 }
 l2_penalties = {'mnist': 5e-2, 'cifar10': 5e-2, 'cifar100': 1e-2, 'tinyimagenet': 5e-3, 'imagenet': 1e-3}
 samples_per_class = {'mnist': 5000, 'cifar10': 4000, 'cifar100': 400, 'tinyimagenet': 450, 'imagenet': 1200}
-retr_k = {'mnist': [100, 5000], 'cifar10': [100, 4000], 'cifar100': [100, 400], 'tinyimagenet': [100, 450], 'imagenet': [100, 1200]}
+retr_num_samples = {'mnist': tot_trn_samples['mnist'], 'cifar10': tot_trn_samples['cifar10'], 'cifar100': tot_trn_samples['cifar100'], 'tinyimagenet': tot_trn_samples['tinyimagenet'], 'imagenet': 300000} # Use just a subset of imagenet otherwise it is too big to keep in memory
+retr_num_rel = {'mnist': samples_per_class['mnist'], 'cifar10': samples_per_class['cifar10'], 'cifar100': samples_per_class['cifar100'], 'tinyimagenet': samples_per_class['tinyimagenet'], 'imagenet': 300}
+retr_k = {ds: [100, retr_num_rel[ds]] for ds in datasets}
+retr_num_nyst = {ds: 1000 for ds in datasets}
 smpleff_regimes = {
 	'mnist': [500, 1000, 1500, 2000, 2500, 5000, 12500],
 	'cifar10': [400, 800, 1200, 1600, 2000, 4000, 10000],

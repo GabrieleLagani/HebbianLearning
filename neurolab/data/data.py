@@ -1,6 +1,8 @@
 import os
 import torch
+import torchvision
 import torchvision.transforms as transforms
+import torchvision.transforms.functional as TF
 from torch.utils.data import DataLoader
 
 from .. import params as P
@@ -56,18 +58,17 @@ class DataManager:
 		self.AUGM_BEFORE_STATS = self.AUGMENT_MANAGER is not None and self.config.CONFIG_OPTIONS.get(P.KEY_AUGM_BEFORE_STATS, False)
 		self.AUGM_STAT_PASSES = self.config.CONFIG_OPTIONS.get(P.KEY_AUGM_STAT_PASSES, 1) if self.AUGM_BEFORE_STATS else 1
 		self.WHITEN = self.config.CONFIG_OPTIONS.get(P.KEY_WHITEN, None) # Perform whitening with smoothing const 10^-self.WHITEN
+		self.WHITEN_FILTER_SIZE = self.config.CONFIG_OPTIONS.get(P.KEY_WHITEN_FILTER_SIZE, 32)
 		self.NUM_WORKERS = P.GLB_PARAMS[P.KEY_GLB_NUM_WORKERS]
 		self.DEVICE = P.DEVICE
 		self.SYS_INFO = self.config.SYS_INFO
 
 		# Constants related to files where dataset statistics are computed and saved
 		self.STATS_FILE = os.path.join(P.STATS_FOLDER, self.DATASET_NAME, 'stats') + str(self.DATASEED) + '_' + str(self.INPUT_CHANNELS) + 'x' + str(self.INPUT_SIZE) + 'x' + str(self.INPUT_SIZE) + '_' + str(self.TOT_TRN_SAMPLES) + 'x' + str(self.AUGM_STAT_PASSES) + (('_da_' + self.AUGMENT_MANAGER + '_' + self.augment_manager.get_transform_summary()) if self.AUGM_BEFORE_STATS else '') + '.pt'
-		self.PFM_FILE = os.path.join(P.STATS_FOLDER, self.DATASET_NAME, 'pfm') + str(self.DATASEED) + '_' + str(self.INPUT_CHANNELS) + 'x' + str(self.INPUT_SIZE) + 'x' + str(self.INPUT_SIZE) + '_' + str(self.TOT_TRN_SAMPLES) + 'x' + str(self.AUGM_STAT_PASSES) + (('_da_' + self.AUGMENT_MANAGER + '_' + self.augment_manager.get_transform_summary()) if self.AUGM_BEFORE_STATS else '') + '.pt'
-		self.SVD_FILE = os.path.join(P.STATS_FOLDER, self.DATASET_NAME, 'svd') + str(self.DATASEED) + '_' + str(self.INPUT_CHANNELS) + 'x' + str(self.INPUT_SIZE) + 'x' + str(self.INPUT_SIZE) + '_' + str(self.TOT_TRN_SAMPLES) + 'x' + str(self.AUGM_STAT_PASSES) + (('_da_' + self.AUGMENT_MANAGER + '_' + self.augment_manager.get_transform_summary()) if self.AUGM_BEFORE_STATS else '') + '.pt'
-		self.ZCA_FILE = os.path.join(P.STATS_FOLDER, self.DATASET_NAME, 'zca') + str(self.DATASEED) + '_' + 'w' + str(self.WHITEN) + '_' + str(self.INPUT_CHANNELS) + 'x' + str(self.INPUT_SIZE) + 'x' + str(self.INPUT_SIZE) + '_' + str(self.TOT_TRN_SAMPLES) + 'x' + str(self.AUGM_STAT_PASSES) + (('_da_' + self.AUGMENT_MANAGER + '_' + self.augment_manager.get_transform_summary() if self.AUGM_BEFORE_STATS else '')) + '.pt'
+		self.SVD_FILE = os.path.join(P.STATS_FOLDER, self.DATASET_NAME, 'svd') + str(self.DATASEED) + '_' + 'wf' + str(self.WHITEN_FILTER_SIZE) + '_' + str(self.INPUT_CHANNELS) + 'x' + str(self.INPUT_SIZE) + 'x' + str(self.INPUT_SIZE) + '_' + str(self.TOT_TRN_SAMPLES) + 'x' + str(self.AUGM_STAT_PASSES) + (('_da_' + self.AUGMENT_MANAGER + '_' + self.augment_manager.get_transform_summary()) if self.AUGM_BEFORE_STATS else '') + '.pt'
+		self.ZCA_FILE = os.path.join(P.STATS_FOLDER, self.DATASET_NAME, 'zca') + str(self.DATASEED) + '_' + 'wf' + str(self.WHITEN_FILTER_SIZE) + '_' + 'w' + str(self.WHITEN) + '_' + str(self.INPUT_CHANNELS) + 'x' + str(self.INPUT_SIZE) + 'x' + str(self.INPUT_SIZE) + '_' + str(self.TOT_TRN_SAMPLES) + 'x' + str(self.AUGM_STAT_PASSES) + (('_da_' + self.AUGMENT_MANAGER + '_' + self.augment_manager.get_transform_summary() if self.AUGM_BEFORE_STATS else '')) + '.pt'
 		self.MEAN_KEY = 'mean'
 		self.STD_KEY = 'std'
-		self.PFM_KEY = 'pfm'
 		self.S_KEY = 'svd_S'
 		self.U_KEY = 'svd_U'
 		self.ZCA_KEY = 'zca'
@@ -100,34 +101,27 @@ class DataManager:
 		# Add data augmentation transformations, if needed
 		self.T_augm = transforms.Compose([T_resize, self.augment_manager.get_transform(), T_other]) if self.AUGMENT_MANAGER is not None else self.T
 
-		# Append normalization transformation (not needed when whitening is performed)
+		# Append normalization transformation, and optionally whitening
 		self.mean = None
 		self.std = None
 		self.zca = None
-		self.pfm = None
 		self.stats_sys_info = ""
 		self.zca_sys_info = ""
-		self.pfm_sys_info = ""
-		if self.WHITEN is None:
-			self.mean, self.std, self.stats_sys_info = self.get_stats()
-			# The Normalize transform subtracts mean values from each channel and divides each channel by std dev values.
-			# So we bring each channel to zero mean and unit std, i.e. from range [0, 1] to range [-1, 1]
-			self.T = transforms.Compose([self.T, transforms.Normalize(self.mean, self.std)])
-			self.T_augm = transforms.Compose([self.T_augm, transforms.Normalize(self.mean, self.std)])
-		else:
-			# Compute whitening matrix, otherwise
-			self.zca, self.zca_sys_info = self.get_zca()
-			self.pfm, self.pfm_sys_info = self.get_per_feature_mean()
+		self.mean, self.std, self.stats_sys_info = self.get_stats()
+		# The Normalize transform subtracts mean values from each channel and divides each channel by std dev values.
+		# So we bring each channel to zero mean and unit std, i.e. from range [0, 1] to range [-1, 1]
+		T_norm = transforms.Normalize(self.mean, self.std)
+		self.T = transforms.Compose([self.T, T_norm])
+		self.T_augm = transforms.Compose([self.T_augm, T_norm])
+		# Compute whitening matrix
+		if self.WHITEN is not None: self.zca, self.zca_sys_info = self.get_zca()
 		
 		# Log preprocessing details
 		self.logger = utils.Logger(self.config.LOG_PATH)
 		self.logger.log("")
 		self.logger.log("Preprocessing details:")
-		if self.WHITEN is None:
-			self.logger.log("Using stats computed as follows:\n" + self.stats_sys_info)
-		else:
-			self.logger.log("Using per feature mean computed as follows:\n" + self.pfm_sys_info)
-			self.logger.log("Using ZCA computed as follows:\n" + self.zca_sys_info)
+		self.logger.log("Using stats computed as follows:\n" + self.stats_sys_info)
+		if self.WHITEN is not None: self.logger.log("Using ZCA computed as follows:\n" + self.zca_sys_info)
 		self.logger.log("End of preprocessing details.")
 		
 		# Load datasets
@@ -207,56 +201,27 @@ class DataManager:
 		utils.set_rng_state(stats_dict[self.RNG_STATE_KEY])
 		# Return results
 		return stats_dict[self.MEAN_KEY], stats_dict[self.STD_KEY], stats_dict[self.SYS_INFO_KEY]
-
-	# Return per feature mean value
-	def get_per_feature_mean(self):
-		pfm_dict = utils.load_dict(self.PFM_FILE)
-		if pfm_dict is None: # per feature mean file does not exist --> compute per feature mean
-			print("Computing per feature mean for dataset \"" + self.DATASET_NAME + "\"...")
-			# Set RNG state
-			utils.set_rng_state(self.rng_state)
-			# Get the images on which to compute the statistics
-			dataset = self.load_split(self.get_train_split(transform=self.T_augm if self.AUGM_BEFORE_STATS else self.T))
-			sum = torch.zeros(self.INPUT_SIZE_TOTAL, device=self.DEVICE)
-			count = 0
-			progtracker = utils.ProgressTracker(P.PROGRESS_INTERVAL, self.AUGM_STAT_PASSES * self.TOT_TRN_SAMPLES)
-			for _ in range(self.AUGM_STAT_PASSES):
-				for batch in dataset:
-					inputs, _ = batch
-					inputs = inputs.to(self.DEVICE)
-					sum += (inputs.view(-1, self.INPUT_SIZE_TOTAL)).sum(0)
-					count += inputs.size(0)
-					# Print progress information roughly every P.PROGRESS_INTERVAL seconds
-					progtracker.print_progress(count)
-			pfm = sum / count
-			# Save per feature mean
-			pfm_dict = {self.PFM_KEY: pfm, self.RNG_STATE_KEY: utils.get_rng_state(), self.SYS_INFO_KEY: "Per feature mean computation details:\n" + self.SYS_INFO + "\nEnd per feature mean computation details."}
-			utils.save_dict(pfm_dict, self.PFM_FILE)
-			print("Per feature mean computed and saved.")
-		# If results were recovered from file, restore RNG state as if they were computed now
-		utils.set_rng_state(pfm_dict[self.RNG_STATE_KEY])
-		# Return results
-		return pfm_dict[self.PFM_KEY].to(self.DEVICE), pfm_dict[self.SYS_INFO_KEY]
-
+	
 	# Return dataset covariance matrix singular value decomposition
 	def get_svd(self):
 		svd_dict = utils.load_dict(self.SVD_FILE)  # Try to load svd from file
 		if svd_dict is None:  # svd file does not exist --> Compute covariance matrix and perform svd
-			pfm, pfm_sys_info = self.get_per_feature_mean()
 			print("Computing covariance matrix for dataset \"" + self.DATASET_NAME + "\"...")
 			# Set RNG state
 			utils.set_rng_state(self.rng_state)
 			# Get the images on which to compute the statistics
 			dataset = self.load_split(self.get_train_split(transform=self.T_augm if self.AUGM_BEFORE_STATS else self.T))
-			cov = torch.zeros((self.INPUT_SIZE_TOTAL, self.INPUT_SIZE_TOTAL), device=self.DEVICE)
+			patch_size = self.INPUT_SHAPE[0] * self.WHITEN_FILTER_SIZE * self.WHITEN_FILTER_SIZE
+			cov = torch.zeros((patch_size, patch_size), device=self.DEVICE)
 			count = 0
 			progtracker = utils.ProgressTracker(P.PROGRESS_INTERVAL, self.AUGM_STAT_PASSES * self.TOT_TRN_SAMPLES)
 			for _ in range(self.AUGM_STAT_PASSES):
 				for batch in dataset:
 					inputs, _ = batch
 					inputs = inputs.to(self.DEVICE)
-					inputs = inputs.view(-1, self.INPUT_SIZE_TOTAL) - pfm.view(1, self.INPUT_SIZE_TOTAL)
-					cov += inputs.t().matmul(inputs)
+					inputs = self.adapt_to_zca_filter(inputs)
+					inputs_unf = inputs.unfold(2, self.WHITEN_FILTER_SIZE, self.WHITEN_FILTER_SIZE).unfold(3, self.WHITEN_FILTER_SIZE, self.WHITEN_FILTER_SIZE).permute(0, 2, 3, 1, 4, 5).contiguous().view(-1, patch_size)
+					cov += inputs_unf.t().matmul(inputs_unf)
 					count += inputs.size(0)
 					# Print progress information roughly every P.PROGRESS_INTERVAL seconds
 					progtracker.print_progress(count)
@@ -264,7 +229,7 @@ class DataManager:
 			print("Computing SVD of covariance matrix for dataset \"" + self.DATASET_NAME + "\" (this might take a while)...")
 			U, S, V = torch.svd(cov)
 			# Save covariance matrix and svd
-			svd_dict = {self.S_KEY: S, self.U_KEY: U, self.RNG_STATE_KEY: utils.get_rng_state(), self.SYS_INFO_KEY: "SVD computation details:\n" + self.SYS_INFO + "\nUsing per feature mean computed as follows:\n" + pfm_sys_info + "\nEnd SVD computation details."}
+			svd_dict = {self.S_KEY: S, self.U_KEY: U, self.RNG_STATE_KEY: utils.get_rng_state(), self.SYS_INFO_KEY: "SVD computation details:\n" + self.SYS_INFO + "\nUsing stats computed as follows:\n" + self.stats_sys_info + "\nEnd SVD computation details."}
 			utils.save_dict(svd_dict, self.SVD_FILE)
 			print("SVD computed and saved.")
 		# If results were recovered from file, restore RNG state as if they were computed now
@@ -285,9 +250,24 @@ class DataManager:
 			utils.save_dict(zca_dict, self.ZCA_FILE)
 			print("ZCA matrix computed and saved.")
 		return zca_dict[self.ZCA_KEY].to(self.DEVICE), zca_dict[self.SYS_INFO_KEY]
-
+	
+	def adapt_to_zca_filter(self, inputs):
+		excess_height = self.INPUT_SHAPE[1] % self.WHITEN_FILTER_SIZE
+		if excess_height == 0: excess_height = self.WHITEN_FILTER_SIZE
+		excess_width = self.INPUT_SHAPE[2] % self.WHITEN_FILTER_SIZE
+		if excess_width == 0: excess_width = self.WHITEN_FILTER_SIZE
+		return TF.resize(inputs, (self.INPUT_SHAPE[1] + self.WHITEN_FILTER_SIZE - excess_height, self.INPUT_SHAPE[2] + self.WHITEN_FILTER_SIZE - excess_width))
+		
 	# Method for preprocessing a batch of data
 	def preprocess(self, x):
 		# Preprocessing consists in whitening the data samples
-		if self.WHITEN is not None: return torch.matmul(self.zca, (x.view(-1, self.INPUT_SIZE_TOTAL) - self.pfm.view(1, self.INPUT_SIZE_TOTAL)).t()).t().view(-1, *self.INPUT_SHAPE)
+		if self.WHITEN is not None:
+			x = self.adapt_to_zca_filter(x)
+			res = torch.nn.functional.fold(
+				torch.conv2d(x, self.zca.view(-1, self.INPUT_SHAPE[0], self.WHITEN_FILTER_SIZE, self.WHITEN_FILTER_SIZE), stride=self.WHITEN_FILTER_SIZE).view(x.size(0), self.INPUT_SHAPE[0] * self.WHITEN_FILTER_SIZE * self.WHITEN_FILTER_SIZE, -1),
+				(x.size(2), x.size(3)),
+				self.WHITEN_FILTER_SIZE,
+				stride=self.WHITEN_FILTER_SIZE,
+			)
+			return TF.resize(res, (self.INPUT_SHAPE[1], self.INPUT_SHAPE[2]))
 		return x

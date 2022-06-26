@@ -1,25 +1,66 @@
+import torch
 import torch.nn as nn
 
+from neurolab import utils
 from .functional import *
 import params as P
 
 
 # TODO:
-#   - Bias should be considered as other adaptive parameters, hence with a separate affine parameter. Maybe remove the
-#       merged updates for the bias. When bias is used as variance, we should find a way to make so that larger bias
-#       means more selective, hence overfitting, so that L2 regularization makes sense as in the case of additive bias.
-#       We can simply add the adaptive and affine bias, and then exponentiate by this number instead of its reciprocal.
 #   - Normalization based on layer norm in addition to batch norm, Modified batch norm layer which computes stats only
 #       adaptively, and not batch wise, and in the backward pass computes the gradients as if the stats were computed
-#       batch wise. Possibility to normalize with average of variances rather than each feature with its own variance.
-#       Possibility to normalize with heuristics based on weights.
-#   - Trisigma wta configs
+#       batch wise. Same also for other adaptive params. Possibility to normalize with average of variances rather than
+#       each feature with its own variance. Possibility to normalize with heuristics based on weights.
+#   - Add deferred update flag and local optimization inside module. Merged updates for all the adaptive parameters.
 #   - Post nonlinear demixer ica, Mix ica and pca, ica kappa parameter adapted by infomax.
-#   - Recurrent computation and lca
-#   - Spatial decorrelation, competition + reconstruction, other reconstruction criteria, hebbian rules from other
-#       losses, backward feedback, differentiable plasticity, splitting nonlinearities, reorganize weight init
+#   - Trisigma wta configs, spatial decorrelation, reconstruction + competition, cocoa, other reconstruction criteria,
+#       presynaptic gating, repulsive competition, backward feedback, hebbian rules from other losses, splitting nonlinearities,
+#       recurrent computation and lca, differentiable plasticity, competitive interaction in backward, competitive
+#       nonlinearity with identity backward
+#   - PCA with neurons with multiple different bias targets to achieve multiple splits
+#   - Clustering with gauss nonlinearity integrated with vector projection similarity using weight vector as mean
+#       encoding and bias for variance, so that it is possible to find aligned clusters with dot product-based similarity.
 
 
+# A generalized normalization layer
+class GenNorm(nn.Module):
+	
+	def __init__(self, n, beta=0.1, eps=1e-9, affine=True):
+		super(GenNorm, self).__init__()
+		
+		self.bias = nn.Parameter(torch.zeros(n).float(), requires_grad=True)
+		self.register_buffer('running_mean', torch.zeros(n).float())
+		#self.running_mean = nn.Parameter(torch.zeros(n).float(), requires_grad=True)
+		self.weight = nn.Parameter(torch.ones(n).float(), requires_grad=True)
+		self.register_buffer('running_var', torch.ones(n).float())
+		#self.running_var = nn.Parameter(torch.ones(n).float(), requires_grad=True)
+		
+		self.beta = beta
+		self.eps = eps
+		self.affine = affine
+	
+	def track(self, x):
+		mean = x.mean(dim=(0, 2))
+		var = x.var(dim=(0, 2))
+		self.running_mean = self.running_mean + self.beta * (mean - self.running_mean)
+		self.running_var = self.running_var + self.beta * (var - self.running_var)
+	
+	def normalize(self, x):
+		res = (x - self.running_mean.view(1, -1, 1)) / torch.sqrt(self.running_var.view(1, -1, 1) + self.eps)
+		if self.affine: res = res * self.weight.view(1, -1, 1) + self.bias.view(1, -1, 1)
+		return res
+		
+	def forward(self, x):
+		orig_size = x.size()
+		x = x.view(x.size(0), x.size(1), -1) # Batch dim, channel dim, input/window dim
+		with torch.no_grad(): self.track(x)
+		return self.normalize(x).view(orig_size)
+	
+	#def parameters(self, recurse: bool = ...):
+	#	return [self.weight, self.bias]
+
+
+# A layer of competitive activation
 class Competitive(nn.Module):
 	# Types of random abstention strategies
 	HARD_RAND_ABST = 'hard_rand_abst'
@@ -50,7 +91,7 @@ class Competitive(nn.Module):
 	             lfb_sigma=None,
 	             lfb_tau=1000,
 	             beta=.1):
-		# Default gives always all 1s in output (times the teacher signal, if provided), i.e. all winners. Competitive(lfb_y_gating=True) gives identity mapping.
+		# Default gives always all 1s in output, i.e. all winners (trivial competition). Competitive(lfb_y_gating=True) gives identity mapping.
 		super(Competitive, self).__init__()
 		# Enable/disable features such as random abstention, competitive learning, lateral feedback
 		self.competitive_act = competitive_act
@@ -61,14 +102,14 @@ class Competitive(nn.Module):
 			raise ValueError("Invalid value for argument ada_k: " + str(ada_k))
 		self.ada_k = ada_k
 		self.trk = nn.BatchNorm2d(1, momentum=self.beta, affine=False)
-		if self.competitive and random_abstention not in [None, self.SOFT_RAND_ABST, self.HARD_RAND_ABST]:
+		if random_abstention not in [None, self.SOFT_RAND_ABST, self.HARD_RAND_ABST]:
 			raise ValueError("Invalid value for argument random_abstention: " + str(random_abstention))
 		self.random_abstention = random_abstention
 		self.random_abstention_on = self.competitive and self.random_abstention is not None
 		self.y_gating = y_gating
 		self.lfb_y_gating = lfb_y_gating
-		self.lfb_on = lfb_value is not None and lfb_value != 0
 		self.lfb_value = lfb_value
+		self.lfb_on = self.lfb_value is not None and self.lfb_value != 0
 		
 		# Initialize output size, which is necessary only when random abstention or lfb is enabled
 		self.out_size = None
@@ -120,7 +161,9 @@ class Competitive(nn.Module):
 		k = self.k
 		if self.training and lrn: # Track stats
 			if self.ada_k == self.ADA_K_MODE_LOG: _ = self.trk(torch.log(scores).view(-1, 1, 1, 1))
-			else: _ = self.trk(scores.view(-1, 1, 1, 1))
+			else:
+				if self.ada_k is not None: #NB: this condition will be removed when we implement more efficient tracking (currently it is slow)
+					_ = self.trk(scores.view(-1, 1, 1, 1))
 		# Compute adaptive k
 		if self.ada_k in [self.ADA_K_MODE_STD, self.ADA_K_MODE_LOG]:
 			k = k * self.trk.running_var**0.5
@@ -134,16 +177,16 @@ class Competitive(nn.Module):
 		if self.random_abstention_on:
 			abst_prob = self.victories_count / (self.victories_count.max() + y.size(0) / y.size(1)).clamp(1)
 			if self.random_abstention == self.SOFT_RAND_ABST: scores = y * abst_prob.unsqueeze(0)
-			if self.random_abstention == self.HARD_RAND_ABST: scores = y * (torch.rand_like(abst_prob, device=y.device) >= abst_prob).float().unsqueeze(0)
+			if self.random_abstention == self.HARD_RAND_ABST: scores = y * (torch.rand_like(abst_prob) >= abst_prob).float().unsqueeze(0)
 		
 		# Competition. The returned winner_mask is a bitmap telling where a neuron won and where one lost.
 		if self.competitive:
 			winner_mask = self.competitive_act(scores, self.get_k(scores, lrn=lrn), t)
-			if self.random_abstention_on and self.training:  # Update statistics if using random abstension
+			if lrn and self.random_abstention_on and self.training:  # Update statistics if using random abstension
 				winner_mask_sum = winner_mask.sum(0)  # Number of inputs over which a neuron won
 				self.victories_count += winner_mask_sum
 				self.victories_count -= self.victories_count.min().item()
-		else: winner_mask = torch.ones_like(y, device=y.device)
+		else: winner_mask = torch.ones_like(y)
 		
 		# Apply winner_mask gating by the output if necessary
 		if self.y_gating: winner_mask = winner_mask * y
@@ -162,21 +205,15 @@ class Competitive(nn.Module):
 		# Apply lfb gating by output if necessary
 		if self.lfb_y_gating: lfb_out = lfb_out * y
 		
-		# When competition is off, the teacher signal is used to gate the lfb output, if provided
-		if not self.competitive and t is not None: lfb_out = lfb_out * t
-		
 		# LFB kernel shrinking schedule
-		if self.lfb_on and self.gamma is not None and self.training: self.lfb_kernel = self.lfb_kernel.pow(self.gamma)
+		if lrn and self.lfb_on and self.gamma is not None and self.training: self.lfb_kernel = self.lfb_kernel.pow(self.gamma)
 		
 		return lfb_out
+
 
 # This module represents a layer of convolutional neurons that are trained with Hebbian algorithms
 class HebbianConv2d(nn.Module):
 	# s = sim(w, x), y = act(s) -- e.g.: s = w^T x, y = f(s)
-	
-	# Types of weight initialization schemes
-	INIT_BASE = 'init_base'
-	INIT_NORM = 'init_norm'
 	
 	# Type of gating term
 	GATE_BASE = 'gate_base'  # r = cmp_res
@@ -232,7 +269,7 @@ class HebbianConv2d(nn.Module):
 	BIAS_MODE_TARG = 'bias_mode_targ'
 	BIAS_MODE_STD = 'bias_mode_std'
 	BIAS_MODE_PERC = 'bias_mode_perc'
-	BIAS_MODE_VAR = 'bias_mode_var'
+	BIAS_MODE_EXP = 'bias_mode_exp'
 	BIAS_MODE_VALUE = 'bias_mode_value'
 	
 	# Activation complement modes - activation complement transforms nonlinearities for some neuron into x - the nonlinearity.
@@ -245,20 +282,31 @@ class HebbianConv2d(nn.Module):
 	ACT_COMPLEMENT_ADAPT_KRT = 'act_complement_adapt_krt'
 	ACT_COMPLEMENT_ADAPT_STB = 'act_complement_adapt_stb'
 	
+	# Modes for affine parameters
+	ZETA_MODE_CONST = 'zeta_mode_const'
+	ZETA_MODE_PARAM = 'zeta_mode_param'
+	ZETA_MODE_VEC = 'zeta_mode_vec'
+	ZETA_MODE_MAT = 'zeta_mode_mat'
+	
 	
 	def __init__(self,
 	             in_channels,
 	             out_channels,
 	             kernel_size,
-	             weight_init=INIT_BASE,
+	             weight_init=None,
+	             weight_init_nrm=False,
+	             weight_zeta_mode=None,
+	             weight_zeta=0.,
 	             lrn_sim=kernel_mult2d,
 	             lrn_act=identity,
-	             lrn_bias=False,
 	             lrn_cmp=False,
+	             lrn_t=False,
+	             lrn_bias=False,
 	             out_sim=kernel_mult2d,
 	             out_act=identity,
-	             out_bias=False,
 	             out_cmp=False,
+	             out_t=False,
+	             out_bias=False,
 	             competitive=None,
 	             act_complement_init=None,
 	             act_complement_ratio=0,
@@ -268,6 +316,7 @@ class HebbianConv2d(nn.Module):
 	             gating=GATE_HEBB,
 	             upd_rule=UPD_RECONSTR,
 	             y_prime_gating=False,
+	             z_prime_gating=False,
 	             reconstruction=REC_LIN_CMB,
 	             reduction=RED_AVG,
 	             bias_init=None,
@@ -276,6 +325,8 @@ class HebbianConv2d(nn.Module):
 	             bias_target=0,
 	             bias_gating=None,
 	             bias_var_gating=False,
+	             bias_zeta_mode=None,
+	             bias_zeta=0.,
 	             var_adaptive=False,
 	             var_affine=False,
 	             conserve_var=True,
@@ -283,20 +334,35 @@ class HebbianConv2d(nn.Module):
 	             alpha_g=0,
 	             alpha_bias_l=1,
 	             alpha_bias_g=0,
-	             beta=.1,
-	             fasthebb=True,
-	             reordmult=True,):
+	             beta=.1,):
 		super(HebbianConv2d, self).__init__()
 		# Init weights
-		if not callable(weight_init) and weight_init not in [self.INIT_BASE, self.INIT_NORM]:
-			raise ValueError("Invalid value for argument weight_init: " + str(weight_init))
 		if hasattr(kernel_size, '__len__') and len(kernel_size) == 1: kernel_size = kernel_size[0]
 		if not hasattr(kernel_size, '__len__'): kernel_size = [kernel_size, kernel_size]
-		stdv = 1 / (in_channels * kernel_size[0] * kernel_size[1]) ** 0.5
 		self.weight = nn.Parameter(torch.empty(out_channels, in_channels, kernel_size[0], kernel_size[1]), requires_grad=True)
-		nn.init.uniform_(self.weight, -stdv, stdv)  # Same initialization used by default pytorch conv modules (the one from the paper "Efficient Backprop, LeCun")
-		if weight_init == self.INIT_NORM: self.weight = self.weight / self.weight.view(self.weight.size(0), -1).norm(dim=1, p=2).view(-1, 1, 1, 1)  # normalize weights
-		if callable(weight_init): self.weight = weight_init(self.weight)
+		if not callable(weight_init) and weight_init is not None:
+			raise ValueError("Argument weight_init must be callable or None")
+		if weight_init is None: weight_init = weight_init_std # Default initialization
+		self.weight = weight_init(self.weight)
+		if weight_zeta_mode not in [None, self.ZETA_MODE_CONST, self.ZETA_MODE_PARAM, self.ZETA_MODE_VEC, self.ZETA_MODE_MAT]:
+			raise ValueError("Invalid value for argument weight_zeta_mode: " + str(weight_zeta_mode))
+		self.weight_zeta_mode = weight_zeta_mode
+		if self.weight_zeta_mode is not None:
+			self.weight_ada = nn.Parameter(torch.empty(out_channels, in_channels, kernel_size[0], kernel_size[1]), requires_grad=True)
+			self.weight_ada = weight_init(self.weight_ada)
+			self.weight_zeta = weight_zeta
+			if self.weight_zeta_mode == self.ZETA_MODE_PARAM: self.weight_zeta = nn.Parameter(torch.tensor(weight_zeta).float(), requires_grad=True)
+			if self.weight_zeta_mode == self.ZETA_MODE_VEC: self.weight_zeta = nn.Parameter(weight_zeta * torch.ones(out_channels).float().view(-1, 1, 1, 1), requires_grad=True)
+			if self.weight_zeta_mode == self.ZETA_MODE_MAT: self.weight_zeta = nn.Parameter(weight_zeta * torch.ones_like(self.weight_ada).float(), requires_grad=True)
+			self.weight = self.weight / (1 + (1 + self.weight_zeta))
+			self.weight_ada = self.weight_ada / (1 + (1 + self.weight_zeta))
+		else:
+			self.register_parameter('weight_ada', None)
+			self.register_parameter('weight_zeta', None)
+		if weight_init_nrm: # Normalize weights
+			w_norm = self.get_weight().view(self.weight.size(0), -1).norm(dim=1, p=2).view(-1, 1, 1, 1)
+			self.weight = self.weight / w_norm
+			if self.weight_ada is not None: self.weight_ada = self.weight_ada / w_norm
 		
 		# Alpha is the constant which determines the trade off between global and local updates
 		self.alpha_l = alpha_l
@@ -307,12 +373,14 @@ class HebbianConv2d(nn.Module):
 		# Set similarity and activation functions
 		self.lrn_sim = lrn_sim
 		self.lrn_act = lrn_act
-		self.lrn_bias = lrn_bias
 		self.lrn_cmp = lrn_cmp
+		self.lrn_t = lrn_t
+		self.lrn_bias = lrn_bias
 		self.out_sim = out_sim
 		self.out_act = out_act
-		self.out_bias = out_bias
 		self.out_cmp = out_cmp
+		self.out_t = out_t
+		self.out_bias = out_bias
 		self.competitive = competitive # None gives identity mapping
 		if self.competitive.out_channels is not None and self.competitive.out_channels != out_channels:
 			raise ValueError("Argument out_channels: " + str(out_channels) + " and competitive.out_channels: " + str(self.competitive.out_channels) + " must match")
@@ -321,7 +389,7 @@ class HebbianConv2d(nn.Module):
 		if act_complement_adapt not in [None, self.ACT_COMPLEMENT_ADAPT_STB, self.ACT_COMPLEMENT_ADAPT_KRT]:
 			raise ValueError("Invalid value for argument act_complement_adapt: " + str(act_complement_adapt))
 		if act_complement_ratio > 1.0:
-			raise ValueError("Invalid value for argument act_complement_ration: " + str(act_complement_ratio) + " (required float < 1.0)")
+			raise ValueError("Invalid value for argument act_complement_ratio: " + str(act_complement_ratio) + " (required float <= 1.0)")
 		kappa = None
 		self.act_complement_from_idx = out_channels
 		if act_complement_init == self.ACT_COMPLEMENT_INIT_RAND:
@@ -350,12 +418,13 @@ class HebbianConv2d(nn.Module):
 		self.register_buffer('rho', (3 * torch.ones(out_channels).float()) if self.act_complement_adapt == self.ACT_COMPLEMENT_ADAPT_STB else None)
 		self.act_complement_grp = act_complement_grp and (self.act_complement_from_idx < out_channels) and (self.act_complement_adapt is None)
 		self.kappa_affine = act_complement_affine
-		self.kappa_trainable = nn.Parameter(torch.zeros(out_channels).float(), requires_grad=True) if self.kappa_affine else self.register_parameter('kappa_trainable', None)
+		if self.kappa_affine: self.kappa_trainable = nn.Parameter(torch.zeros(out_channels).float(), requires_grad=True)
+		else: self.register_parameter('kappa_trainable', None)
 		
 		# Init bias
-		if bias_mode not in [None, self.BIAS_MODE_BASE, self.BIAS_MODE_TARG, self.BIAS_MODE_STD, self.BIAS_MODE_PERC, self.BIAS_MODE_VAR, self.BIAS_MODE_VALUE]:
+		if bias_mode not in [None, self.BIAS_MODE_BASE, self.BIAS_MODE_TARG, self.BIAS_MODE_STD, self.BIAS_MODE_PERC, self.BIAS_MODE_EXP, self.BIAS_MODE_VALUE]:
 			raise ValueError("Invalid value for argument bias_mode: " + str(bias_mode))
-		if not (isinstance(bias_init, int) or isinstance(bias_init, float) or (isinstance(bias_init, str) and bias_mode == self.BIAS_MODE_VALUE) or callable(bias_init)):
+		if not (bias_init is None or isinstance(bias_init, int) or isinstance(bias_init, float) or (isinstance(bias_init, str) and bias_mode == self.BIAS_MODE_VALUE) or callable(bias_init)):
 			raise ValueError("Invalid value for argument bias_init: " + str(bias_init) + " when argument bias_mode is: " + str(bias_mode))
 		if bias_gating not in [None, self.GATE_BASE, self.GATE_HEBB, self.GATE_DIFF, self.GATE_SMAX]:
 			raise ValueError("Invalid value for argument bias_gating: " + str(bias_gating))
@@ -371,6 +440,21 @@ class HebbianConv2d(nn.Module):
 		self.bias_var_gating = bias_var_gating
 		self.using_updatable_bias = self.bias is not None and self.bias_mode != self.BIAS_MODE_VALUE
 		self.using_adaptive_bias = self.alpha_bias_l != 0 and self.using_updatable_bias and self.bias_mode is not None and self.lrn_bias
+		if bias_zeta_mode not in [None, self.ZETA_MODE_CONST, self.ZETA_MODE_PARAM, self.ZETA_MODE_VEC, self.ZETA_MODE_MAT]:
+			raise ValueError("Invalid value for argument bias_zeta_mode: " + str(bias_zeta_mode))
+		self.bias_zeta_mode = bias_zeta_mode
+		if self.bias_zeta_mode is not None:
+			if not self.using_updatable_bias:
+				raise ValueError("Invalid argument bias_zeta_mode when bias in non-numeric")
+			self.bias_ada = nn.Parameter(bias * torch.ones(out_channels).float(), requires_grad=True)
+			self.bias_zeta = bias_zeta
+			if self.bias_zeta_mode == self.ZETA_MODE_PARAM: self.bias_zeta = nn.Parameter(torch.tensor(bias_zeta).float(), requires_grad=True)
+			if self.bias_zeta_mode in [self.ZETA_MODE_VEC, self.ZETA_MODE_MAT]: self.bias_zeta = nn.Parameter(bias_zeta * torch.ones(out_channels).float(), requires_grad=True)
+			self.bias = self.bias / (1 + (1 + self.bias_zeta))
+			self.bias_ada = self.bias_ada / (1 + (1 + self.bias_zeta))
+		else:
+			self.register_parameter('bias_ada', None)
+			self.register_parameter('bias_zeta', None)
 		
 		# Learning rule
 		self.teacher_signal = None  # Teacher signal for supervised training
@@ -385,6 +469,7 @@ class HebbianConv2d(nn.Module):
 		self.upd_rule = upd_rule
 		self.using_adaptive_weight = self.alpha_l != 0 and self.upd_rule is not None
 		self.y_prime_gating = y_prime_gating
+		self.z_prime_gating = z_prime_gating
 		if reduction not in [self.RED_AVG, self.RED_W_AVG]:
 			raise ValueError("Invalid value for argument reductioin: " + str(reduction))
 		self.reduction = reduction
@@ -398,19 +483,32 @@ class HebbianConv2d(nn.Module):
 		# Variables where the weight updates are stored
 		self.delta_w = None
 		self.delta_bias = None
-		
-		# Whether to use FastHebb and matmul reordering optimizations
-		self.FASTHEBB = fasthebb
-		self.REORDMULT = reordmult
 	
 	def set_teacher_signal(self, t):
 		self.teacher_signal = t
 		
 	def forward(self, x):
 		if self.training: self.compute_update(x)
-		out = self.apply_act(self.out_sim(x, self.weight, (self.bias.mean() if self.bias_agg else self.bias) if self.out_bias else None))
-		if self.out_cmp and self.competitive is not None: out = self.competitive(out)
-		return out
+		out = self.out_sim(x, self.get_weight(), self.get_bias() if self.out_bias else None)
+		out_shape = out.size()
+		out = self.apply_act(out)
+		t = self.teacher_signal if self.out_t else None
+		if t is not None: t = t.unsqueeze(2).unsqueeze(3) * torch.ones_like(out)
+		out = out.permute(0, 2, 3, 1).contiguous().view(-1, out.size(1))
+		if t is not None: t = t.permute(0, 2, 3, 1).contiguous().view(-1, self.weight.size(0))
+		out = self.competitive(out, t) if self.competitive is not None and self.out_cmp else out
+		out = out * t if t is not None else out
+		return out.view(out_shape[0], out_shape[2], out_shape[3], out_shape[1]).permute(0, 3, 1, 2).contiguous()
+	
+	def get_weight(self):
+		weight = self.weight
+		if self.weight_ada is not None: weight = weight + (1 + self.weight_zeta) * self.weight_ada
+		return weight
+	
+	def get_bias(self):
+		bias = self.bias
+		if self.bias_ada is not None: bias = bias + (1 + self.bias_zeta) * self.bias_ada
+		return bias.mean() if self.bias_agg else self.bias
 	
 	def apply_act(self, s, lrn=False, cpl=True):
 		s_bar = s
@@ -442,7 +540,7 @@ class HebbianConv2d(nn.Module):
 		
 		if self.using_adaptive_weight or self.using_adaptive_bias or self.var_adaptive or self.act_complement_adapt is not None:
 			# Compute activation states for the layer: s, y, y'
-			s = self.lrn_sim(x, self.weight, (self.bias.mean() if self.bias_agg else self.bias) if self.lrn_bias else None) # Compute similarity metric between inputs and weights
+			s = self.lrn_sim(x, self.get_weight(), self.get_bias() if self.lrn_bias else None) # Compute similarity metric between inputs and weights
 			# Compute y and also y' if y' gating is required
 			if self.y_prime_gating:
 				torch.set_grad_enabled(True) # Gradient enabling to compute derivative y'
@@ -450,8 +548,8 @@ class HebbianConv2d(nn.Module):
 			y = self.apply_act(s, lrn=True)
 			y_prime = torch.ones_like(s)
 			if self.y_prime_gating:
-				y.backward(torch.ones_like(y), retain_graph=prev_grad_enabled)
-				y_prime = s.grad.clone().detach()
+				y.backward(torch.ones_like(y), retain_graph=prev_grad_enabled, create_graph=prev_grad_enabled)
+				y_prime = s.grad
 				s.grad = None
 				torch.set_grad_enabled(False)
 			
@@ -466,8 +564,8 @@ class HebbianConv2d(nn.Module):
 				torch.set_grad_enabled(True) # Gradient enabling to compute derivative y' uncomplemented
 				s.requires_grad = True
 				y_uncpl = self.apply_act(s, cpl=False)
-				y_uncpl.backward(torch.ones_like(y_uncpl), retain_graph=prev_grad_enabled)
-				y_uncpl_prime = s.grad.clone().detach()
+				y_uncpl.backward(torch.ones_like(y_uncpl), retain_graph=prev_grad_enabled, create_graph=prev_grad_enabled)
+				y_uncpl_prime = s.grad
 				s.grad = None
 				torch.set_grad_enabled(False)
 				# Update statistics and determine kappa
@@ -478,8 +576,8 @@ class HebbianConv2d(nn.Module):
 			
 			if self.using_adaptive_weight or self.using_adaptive_bias:
 				# Prepare the necessary tensors and set them in the correct shape
-				t = self.teacher_signal
-				if t is not None: t = t.unsqueeze(2).unsqueeze(3) * torch.ones_like(s, device=s.device)
+				t = self.teacher_signal if self.lrn_t else None
+				if t is not None: t = t.unsqueeze(2).unsqueeze(3) * torch.ones_like(s)
 				s = s.permute(0, 2, 3, 1).contiguous().view(-1, self.weight.size(0))
 				y = y.permute(0, 2, 3, 1).contiguous().view(-1, self.weight.size(0))
 				y_prime = y_prime.permute(0, 2, 3, 1).contiguous().view(-1, self.weight.size(0))
@@ -487,16 +585,29 @@ class HebbianConv2d(nn.Module):
 				x_unf = unfold_map2d(x, self.weight.size(2), self.weight.size(3))
 				x_unf = x_unf.permute(0, 2, 3, 1, 4).contiguous().view(s.size(0), 1, -1)
 				
-				# Run competition
-				cmp_res = self.competitive(y, t, lrn=True) if self.lrn_cmp and self.competitive is not None else y
+				# Run competition, and also derivative w.r.t. competitive nonlinearity, if necessary.
+				if self.z_prime_gating:
+					torch.set_grad_enabled(True) # Gradient enabling to compute derivative z'
+					s.requires_grad = True
+				z = self.competitive(y, t, lrn=True) if self.competitive is not None and self.lrn_cmp else y
+				z_prime = torch.ones_like(y)
+				if self.z_prime_gating:
+					z.backward(torch.ones_like(z), retain_graph=prev_grad_enabled, create_graph=prev_grad_enabled)
+					z_prime = y.grad
+					y.grad = None
+					torch.set_grad_enabled(False)
+					
+				# Gate by teacher signal, if necessary
+				zt = z * t if t is not None else z
 				
 				if self.using_adaptive_weight:
 					# Compute step modulation coefficient
-					r = cmp_res  # GATE_BASE
+					r = zt  # GATE_BASE
 					if self.gating == self.GATE_HEBB: r = r * y
 					if self.gating == self.GATE_DIFF: r = r - y
 					if self.gating == self.GATE_SMAX: r = r - torch.softmax(y, dim=1)
 					if self.y_prime_gating: r = y_prime * r
+					if self.z_prime_gating: r = z_prime * r
 					
 					# Compute the coefficients for update reduction/aggregation over the batch.
 					# Since we use batches of inputs, we need to aggregate the different update steps of each kernel in a unique
@@ -508,19 +619,19 @@ class HebbianConv2d(nn.Module):
 						r_sum = r_sum + (r_sum == 0).float()  # Prevent divisions by zero
 						c = r.abs()/r_sum
 					
-					# Compute delta_w (serialized version for computation of delta_w using less memory)
+					# Compute delta_w
 					delta_w_agg = torch.zeros_like(self.weight.view(self.weight.size(0), -1))
 					for grp in range(2): # repeat the computation for the two neuron groups using complementary nonlinearities
 						if grp == 1 and not self.act_complement_grp: break
 						grp_slice = slice(self.weight.size(0))
 						if self.act_complement_grp: grp_slice = slice(self.act_complement_from_idx) if grp == 0 else slice(self.act_complement_from_idx, self.weight.size(0))
-						w = self.weight.view(1, self.weight.size(0), -1)[:, grp_slice, :]
+						w = (self.weight_ada if self.weight_ada is not None else self.weight).view(1, self.weight.size(0), -1)[:, grp_slice, :]
 						x_bar = None
 						rrlw = None
 						sw = None
 						
-						if self.FASTHEBB:
-							if not self.REORDMULT:
+						if P.HEBB_FASTHEBB:
+							if not P.HEBB_REORDMULT:
 								if self.upd_rule == self.UPD_ICA or self.upd_rule == self.UPD_ICA_NRM: # Computation of s^T * W for ICA
 									for i in range((w.size(1) // P.HEBB_UPD_GRP) + (1 if w.size(1) % P.HEBB_UPD_GRP != 0 else 0)):
 										start = i * P.HEBB_UPD_GRP
@@ -546,30 +657,30 @@ class HebbianConv2d(nn.Module):
 									delta_w_i = rc.view(rc.size(0), -1).t().matmul(x_unf.view(x_unf.size(0), -1))
 									# Compute reconstr based on the type of reconstruction
 									if self.reconstruction == self.REC_QNT: delta_w_i = delta_w_i - rc.sum(0) * w_i.view(w_i.size(1), -1)
-									elif self.reconstruction == self.REC_QNT_SGN: delta_w_i = delta_w_i - rc.permute(1, 2, 0).matmul(r_i.sign().permute(1, 0, 2)).view(-1, 1) * w_i.view(w_i.size(1), -1)
+									elif self.reconstruction == self.REC_QNT_SGN: delta_w_i = delta_w_i - (rc * r_i.sign()).sum(0) * w_i.view(w_i.size(1), -1)
 									elif self.reconstruction == self.REC_LIN_CMB:
-										if self.REORDMULT:
-											l_i = torch.ones([w_i.size(1), w_i.size(1)], device=w_i.device).float().tril()
-											rrlw = (rc.view(rc.size(0), -1).t().matmul(r_i.view(r_i.size(0), -1)) * l_i).matmul(w_i.view(w_i.size(1), -1)) + (rrlw[-1, :] if rrlw is not None else 0.)
+										if P.HEBB_REORDMULT:
+											l_i = (torch.arange(w.size(1), device=w.device).unsqueeze(0).repeat(w_i.size(1), 1) <= torch.arange(start, end, device=w.device).unsqueeze(1)).float()
+											rrlw = (rc.view(rc.size(0), -1).t().matmul(r[:, grp_slice]) * l_i).matmul(w.view(w.size(1), -1))
 											delta_w_i = delta_w_i - rrlw
 										else:
 											x_bar = torch.cumsum(r_i * w_i, dim=1) + (x_bar[:, -1, :].unsqueeze(1) if x_bar is not None else 0.)
 											delta_w_i = delta_w_i - rc.permute(1, 2, 0).matmul(x_bar.permute(1, 0, 2)).view(w_i.size(1), -1)
 								if self.upd_rule in [self.UPD_ICA, self.UPD_HICA, self.UPD_ICA_NRM, self.UPD_HICA_NRM]:
-									if self.REORDMULT:
+									if P.HEBB_REORDMULT:
 										if self.upd_rule == self.UPD_HICA or self.upd_rule == self.UPD_HICA_NRM:
-											l_i = (torch.arange(end, device=w.device).unsqueeze(0).repeat(w_i.size(1), 1) <= torch.arange(start, end).unsqueeze(1)).float()
-											rysw = rc.permute(1, 2, 0).matmul((y_i * (r * s).view(s.size(0), 1, -1) * l_i.unsqueeze(0)).permute(1, 0, 2)).view(rc.size(1), -1).matmul(w.view(w.size(1), -1)[:end, :])
+											l_i = (torch.arange(w.size(1), device=w.device).unsqueeze(0).repeat(w_i.size(1), 1) <= torch.arange(start, end, device=w.device).unsqueeze(1)).float()
+											rysw = ((rc * y_i).view(rc.size(0), -1).t().matmul(r[:, grp_slice] * s[:, grp_slice]) * l_i).matmul(w.view(w.size(1), -1))
 										else:
-											rysw = rc.permute(1, 2, 0).matmul((y_i * (r * s).view(s.size(0), 1, -1)).permute(1, 0, 2)).view(rc.size(1), -1).matmul(w.view(w.size(1), -1))
+											rysw = (rc * y_i).view(rc.size(0), -1).t().matmul(r[:, grp_slice] * s[:, grp_slice]).matmul(w.view(w.size(1), -1))
 									else:
 										if self.upd_rule == self.UPD_HICA or self.upd_rule == self.UPD_HICA_NRM:
 											sw = torch.cumsum((r_i * s_i) * w_i, dim=1) + (sw[:, -1, :].unsqueeze(1) if sw is not None else 0.)
-										rysw = rc.permute(1, 2, 0).matmul((y_i * sw).permute(1, 0, 2)).view(w_i.size(1), -1)
+										rysw = (rc * y_i * sw).sum(0)
 									if self.upd_rule == self.UPD_ICA or self.upd_rule == self.UPD_HICA:
 										delta_w_i = rc.sum(0) * w_i.view(w_i.size(1), -1) - rysw
 									if self.upd_rule == self.UPD_ICA_NRM or self.upd_rule == self.UPD_HICA_NRM:
-										delta_w_i = rysw.unsqueeze(1).matmul(w_i.view(w_i.size(1), -1, 1)).view(-1, 1) * w_i.view(w_i.size(1), -1) - rysw
+										delta_w_i = (rysw * w_i.view(w_i.size(1), -1)).sum(dim=1, keepdim=True) * w_i.view(w_i.size(1), -1) - rysw
 										
 								# Store aggregated update in buffer
 								delta_w_agg[grp_slice, :][start:end, :] = delta_w_i
@@ -619,13 +730,15 @@ class HebbianConv2d(nn.Module):
 				
 				if self.using_adaptive_bias:
 					# Compute step modulation coefficient
-					r = cmp_res  # GATE_BASE
+					r = zt  # GATE_BASE
+					b = (self.bias_ada if self.bias_ada is not None else self.bias).view(1, -1)
 					if self.bias_gating == self.GATE_HEBB: r = r * y
 					if self.bias_gating == self.GATE_DIFF: r = r - y
 					if self.bias_gating == self.GATE_SMAX: r = r - torch.softmax(y, dim=1)
 					if self.bias_gating is None: r = 1.
 					if self.y_prime_gating: r = y_prime * r
-					if self.bias_var_gating: r = r * s * (-torch.log(s) / self.bias.view(1, -1, 1, 1))
+					if self.z_prime_gating: r = z_prime * r
+					if self.bias_var_gating: r = r * s * (torch.log(s) / b.view(1, -1))
 					
 					# Compute the coefficients for update reduction/aggregation over the batch.
 					c = 1/r.size(0)
@@ -639,18 +752,17 @@ class HebbianConv2d(nn.Module):
 					if self.bias_mode == self.BIAS_MODE_BASE:
 						delta_bias = r
 					if self.bias_mode == self.BIAS_MODE_TARG:
-						# NB: self.bias_target is the target mean that we wish to achieve
+						# NB: self.bias_target is the target mean that we want the bias to achieve
 						delta_bias = r * (self.bias_target - s)
 					if self.bias_mode == self.BIAS_MODE_STD:
-						# NB: self.bias_target is the number of std devs away from the mean that we wish to achieve
-						delta_bias = r * (self.bias_target * (self.trk.running_var ** 0.5).view(1, -1, 1, 1) - s)
+						# NB: self.bias_target is the number of std devs away from the mean that we want the bias to achieve
+						delta_bias = r * (self.bias_target * (self.trk.running_var ** 0.5).view(1, -1) - s)
 					if self.bias_mode == self.BIAS_MODE_PERC:
-						# NB: self.bias target is the target percentile of samples above zero that we wish to achieve
-						delta_bias = r * ((s < 0).float() - self.bias_target)
-					if self.bias_mode == self.BIAS_MODE_VAR:
-						# NB: 1/self.bias_target is the number of variances (when the bias is used as variance of
-						# rbf-like similarity functions) that we wish to achieve
-						delta_bias = r * (-torch.log(s) * self.bias.view(1, -1, 1, 1)/self.bias_target - self.bias.view(1, -1, 1, 1))
+						# NB: self.bias target is the target percentile of samples above zero that we want the similarity function to achieve
+						delta_bias = r * (self.bias_target - (s < 0).float())
+					if self.bias_mode == self.BIAS_MODE_EXP:
+						# NB: self.bias_target is the number of std devs that we want the scale of the similarity function to achieve
+						delta_bias = r * b * (1 - (-torch.log(s)) * self.bias_target)
 					
 					# Aggregate updates over the batch and store delta
 					self.delta_bias = c.t().unsqueeze(1).matmul(delta_bias.t().unsqueeze(2)).view_as(self.bias)
@@ -662,13 +774,19 @@ class HebbianConv2d(nn.Module):
 	# and combines them using the parameter alpha.
 	def local_update(self):
 		if self.delta_w is not None or self.weight.grad is not None:
-			# NB: self.delta_w has a minus sign in front because the optimizer will take update steps in the opposite direction.
-			self.weight.grad = self.alpha_l * (-self.delta_w if self.delta_w is not None else 0.) \
-			                   + self.alpha_g * (self.weight.grad if self.weight.grad is not None else 0.)
+			if self.weight_ada is None:
+				# NB: self.delta_w has a minus sign in front because the optimizer will take update steps in the opposite direction.
+				self.weight.grad = self.alpha_l * (-self.delta_w if self.delta_w is not None else torch.zeros_like(self.weight).float()) + self.alpha_g * (self.weight.grad if self.weight.grad is not None else torch.zeros_like(self.weight).float())
+			else:
+				self.weight_ada.grad = self.alpha_l * (-self.delta_w if self.delta_w is not None else torch.zeros_like(self.weight).float())
+				self.weight.grad = self.alpha_g * (self.weight.grad if self.weight.grad is not None else torch.zeros_like(self.weight).float())
 			self.delta_w = None
 		if self.using_updatable_bias and (self.delta_bias is not None or self.bias.grad is not None):
-			# NB: self.delta_bias has a minus sign in front because the optimizer will take update steps in the opposite direction.
-			self.bias.grad = self.alpha_bias_l * (-self.delta_bias if self.delta_bias is not None else 0.) \
-			                 + self.alpha_bias_g * (self.bias.grad if self.bias.grad is not None else 0.)
+			if self.bias_ada is None:
+				# NB: self.delta_bias has a minus sign in front because the optimizer will take update steps in the opposite direction.
+				self.bias.grad = self.alpha_bias_l * (-self.delta_bias if self.delta_bias is not None else torch.zeros_like(self.bias).float()) + self.alpha_bias_g * (self.bias.grad if self.bias.grad is not None else torch.zeros_like(self.bias).float())
+			else:
+				self.bias_ada.grad = self.alpha_bias_l * (-self.delta_bias if self.delta_bias is not None else torch.zeros_like(self.bias).float())
+				self.bias.grad = self.alpha_bias_g * (self.bias.grad if self.bias.grad is not None else torch.zeros_like(self.bias).float())
 			self.delta_bias = None
 

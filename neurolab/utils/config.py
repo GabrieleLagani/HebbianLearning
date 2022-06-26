@@ -57,7 +57,7 @@ class Config:
 		# Path where to save the models
 		self.SAVED_MDL_FOLDER = os.path.join(self.RESULT_FOLDER, 'models')
 		self.SAVED_MDL_PATHS = [os.path.join(self.SAVED_MDL_FOLDER, 'model' + str(i) + '.pt') for i in range(len(self.CONFIG_OPTIONS[P.KEY_NET_MODULES]))] if self.CONFIG_OPTIONS.get(P.KEY_NET_MODULES, None) is not None else []
-
+		
 		# Get system information
 		self.SYS_INFO = utils.get_sys_info()
 		

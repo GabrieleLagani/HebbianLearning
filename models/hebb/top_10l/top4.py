@@ -47,8 +47,9 @@ class Net(Model):
 		self.lrn_act = utils.retrieve(LRN_ACT) if LRN_ACT is not None else F.relu
 		self.out_sim = utils.retrieve(OUT_SIM) if OUT_SIM is not None else HF.kernel_mult2d
 		self.out_act = utils.retrieve(OUT_ACT) if OUT_ACT is not None else F.relu
-		self.competitive_act = None
-		self.K = 0
+		self.competitive_act = config.CONFIG_OPTIONS.get(PP.KEY_COMPETITIVE_ACT, None)
+		if self.competitive_act is not None: self.competitive_act = utils.retrieve(self.competitive_act)
+		self.K = config.CONFIG_OPTIONS.get(PP.KEY_COMPETITIVE_K, 1)
 		self.LRN_SIM_B = config.CONFIG_OPTIONS.get(PP.KEY_LRN_SIM_B, 0.)
 		self.LRN_SIM_S = config.CONFIG_OPTIONS.get(PP.KEY_LRN_SIM_S, 1.)
 		self.LRN_SIM_P = config.CONFIG_OPTIONS.get(PP.KEY_LRN_SIM_P, 1.)
@@ -71,7 +72,7 @@ class Net(Model):
 		self.ACT_COMPLEMENT_RATIO = 0.
 		self.ACT_COMPLEMENT_ADAPT = None
 		self.ACT_COMPLEMENT_GRP = False
-		self.GATING = H.HebbianConv2d.GATE_HEBB
+		self.GATING = H.HebbianConv2d.GATE_BASE
 		self.UPD_RULE = H.HebbianConv2d.UPD_RECONSTR
 		self.RECONSTR = H.HebbianConv2d.REC_LIN_CMB
 		self.RED = H.HebbianConv2d.RED_AVG
@@ -82,15 +83,12 @@ class Net(Model):
 			if OUT_ACT is None: self.out_act = HF.tanh
 			if self.LOC_LRN_RULE == 'hpcat_ada': self.VAR_ADAPTIVE = True
 		if self.LOC_LRN_RULE == 'hwta':
-			if LRN_SIM is None: self.lrn_sim = HF.raised_cos_sim2d
+			if LRN_SIM is None:
+				self.lrn_sim = HF.raised_cos_sim2d
+				self.LRN_SIM_P = config.CONFIG_OPTIONS.get(PP.KEY_LRN_SIM_P, 2.) # NB: In hwta the default lrn_sim is squared raised cosine
 			if LRN_ACT is None: self.lrn_act = HF.identity
 			if OUT_SIM is None: self.out_sim = HF.vector_proj2d
 			if OUT_ACT is None: self.out_act = F.relu
-			if self.LRN_SIM_B is None: self.LRN_SIM_B = 1/2
-			self.competitive_act = config.CONFIG_OPTIONS.get(PP.KEY_WTA_COMPETITIVE_ACT, None)
-			if self.competitive_act is not None: self.competitive_act = utils.retrieve(self.competitive_act)
-			self.K = config.CONFIG_OPTIONS.get(PP.KEY_WTA_K, 1)
-			self.GATING = H.HebbianConv2d.GATE_BASE
 			self.RECONSTR = H.HebbianConv2d.REC_QNT_SGN
 			self.RED = H.HebbianConv2d.RED_W_AVG
 		if self.LOC_LRN_RULE in ['ica', 'hica', 'ica_nrm', 'hica_nrm']:
@@ -100,7 +98,6 @@ class Net(Model):
 			self.ACT_COMPLEMENT_RATIO = config.CONFIG_OPTIONS.get(PP.KEY_ACT_COMPLEMENT_RATIO, 0.)
 			self.ACT_COMPLEMENT_ADAPT = config.CONFIG_OPTIONS.get(PP.KEY_ACT_COMPLEMENT_ADAPT, None)
 			self.ACT_COMPLEMENT_GRP = config.CONFIG_OPTIONS.get(PP.KEY_ACT_COMPLEMENT_GRP, False)
-			self.GATING = H.HebbianConv2d.GATE_BASE
 			self.UPD_RULE = H.HebbianConv2d.UPD_ICA
 			if self.LOC_LRN_RULE == 'hica': self.UPD_RULE = H.HebbianConv2d.UPD_HICA
 			if self.LOC_LRN_RULE == 'ica_nrm': self.UPD_RULE = H.HebbianConv2d.UPD_ICA_NRM
@@ -125,6 +122,7 @@ class Net(Model):
 			lrn_sim=self.lrn_sim,
 			lrn_act=self.lrn_act,
 			lrn_cmp=self.competitive_act is not None,
+			lrn_t=True,
 			out_sim=self.out_sim,
 			out_act=self.out_act,
 			competitive=H.Competitive(out_size=(16, 16), competitive_act=self.competitive_act, k=self.K),
@@ -150,6 +148,7 @@ class Net(Model):
 			lrn_sim=self.lrn_sim,
 			lrn_act=self.lrn_act,
 			lrn_cmp=self.competitive_act is not None,
+			lrn_t=True,
 			out_sim=self.out_sim,
 			out_act=self.out_act,
 			competitive=H.Competitive(out_size=(16, 16), competitive_act=self.competitive_act, k=self.K),
@@ -175,6 +174,7 @@ class Net(Model):
 			lrn_sim=self.lrn_sim,
 			lrn_act=self.lrn_act,
 			lrn_cmp=self.competitive_act is not None,
+			lrn_t=True,
 			out_sim=self.out_sim,
 			out_act=self.out_act,
 			competitive=H.Competitive(out_size=(16, 24), competitive_act=self.competitive_act, k=self.K),
@@ -200,6 +200,7 @@ class Net(Model):
 			lrn_sim=self.lrn_sim,
 			lrn_act=self.lrn_act,
 			lrn_cmp=self.competitive_act is not None,
+			lrn_t=True,
 			out_sim=self.out_sim,
 			out_act=self.out_act,
 			competitive=H.Competitive(out_size=(16, 32), competitive_act=self.competitive_act, k=self.K),
@@ -228,6 +229,7 @@ class Net(Model):
 			lrn_sim=self.lrn_sim,
 			lrn_act=self.lrn_act,
 			lrn_cmp=self.competitive_act is not None,
+			lrn_t=True,
 			out_sim=self.out_sim,
 			out_act=self.out_act,
 			competitive=H.Competitive(out_size=(64, 64), competitive_act=self.competitive_act, k=self.K),
@@ -249,9 +251,10 @@ class Net(Model):
 			in_channels=4096,
 			out_channels=self.NUM_CLASSES,
 			kernel_size=1,
-			lrn_sim=HF.get_affine_sim(HF.raised_cos_sim2d, 1 / 2),
+			lrn_sim=HF.get_affine_sim(HF.raised_cos_sim2d, p=2),
 			lrn_act=HF.identity,
 			lrn_cmp=True,
+			lrn_t=True,
 			out_sim=HF.vector_proj2d if self.ALPHA_G == 0. else HF.kernel_mult2d,
 			out_act=HF.identity,
 			competitive=H.Competitive(),

@@ -2,57 +2,10 @@ from neurolab import params as P
 import params as PP
 
 
-#   whiten    lrn    scale_in    offset_in    scale_out    out    scale_in    offset_in    scale_out    bn1    bn5
-#   No        tanh   1.          0.           1.           tanh   1.          0.           1.           60     50
-#   Yes       tanh   1.          0.           1.           tanh   1.          0.           1.           59     52
-#   No        tanh   1.          0.           1.           sshr   1.          0.           1.           59     16
-#   No        tanh   1.          0.           1.           sshr   .1          0.           1.           60     54
-#   No        tanh   .1          0.           1.           sshr   .1          0.           1.           60     54
-#   No        tanh   1.          0.           1.           sshr   .1          0.           .1           60     54
-#   No        tanh   .1          0.           .1           sshr   .1          0.           .1           60     54
-#   Yes       tanh   1.          0.           1.           sshr   .1          0.           1.           61     52
-# ---------------------------------------------------------------------------------------------------------------
-#   No        tanh   1.          0.           1.           relu   1.          0.           1.           62     54
-#   Yes       tanh   1.          0.           1.           relu   1.          0.           1.           62     50
-#   No        tanh   1.          0.           1.           relu   1.          .2           1.           62     57
-#   No        tanh   1.          0.           1.           relu   1.          .4           1.           61     58
-#   No        tanh   1.          0.           1.           relu   1.          .8           1.           59     57
-#   No        tanh   1.          0.           1.           relu   1.          1.           1.           59     56
-#   No        tanh   1.          0.           1.           relu   1.          2.           1.           58     55
-#   No        tanh   1.          0.           1.           relu   1.         -.2           1.           61     47
-#   Yes       tanh   1.          0.           1.           relu   1.          .4           1.           60     54
-# ---------------------------------------------------------------------------------------------------------------
-#   No        remp   1.          0.           1.           relu   1.          0.           1.           63     52
-#   No        remp   1.          1.5          1.           relu   1.          0.           1.           63     50
-#   No        remp   1.          1.5          1.           relu   1.          .5           1.           62     53
-#   No        remp   1.          1.5          1.           relu   1.         -.5           1.           61     28
-#   No        remp   1.          1.5          1.           relu   1.          1.           1.           61     51
-#   No        remp   1.          1.5          1.           relu   1.          1.5          1.           60     52
-#   No        remp   1.          1.5          1.           relu   1.          2.           1.           60     52
-#   Yes       remp   1.          1.5          1.           relu   1.          .5           1.           60     50
-#   No        shmp   1.          0.           1.           relu   1.          0.           1.           63     52
-#   No        shmp   1.          .3           1.           relu   1.          0.           1.           63     51
-#   No        shmp   1.          .3           1.           relu   1.          .1           1.           63     53
-#   No        shmp   1.          .3           1.           relu   1.         -.1           1.           63     48
-#   No        shmp   1.          .3           1.           relu   1.          .3           1.           63     55
-#   No        shmp   1.          .3           1.           relu   1.          .6           1.           61     55
-#   No        shmp   1.          .3           1.           relu   1.          1.           1.           60     55
-#   No        shmp   1.          .3           1.           relu   1.          2.           1.           60     54
-#   Yes       shmp   1.          .3           1.           relu   1.          .3           1.           60     50
-# No modified bn
-# Post-nonlinear demixers
-# Squared elu out act and const--1/x lrn act for mi maximization, with gelu sq out act
-# Adaptive nonlinearities
-# Splitting nonlinearities
-# PCA with splitting nonlinearities
-# PCA with neurons with multiple different bias targets to achieve muiltiple splits
-# Clustering with gauss nonlinearity integrated with vector projection similarity using weight vector as mean encoding and bias
-#  for variance, so that it is possible to find aligned clusters with dot product-based similarity.
-
-config_ica = {
+config_2l_hebb = {
 	P.KEY_EXPERIMENT: 'neurolab.experiment.VisionExperiment',
-	P.KEY_NET_MODULES: 'models.hebb.model_6l.Net',
-	P.KEY_NET_OUTPUTS: 'fc6',
+	P.KEY_NET_MODULES: 'models.hebb.model_2l.Net',
+	P.KEY_NET_OUTPUTS: 'fc2',
 	P.KEY_DATA_MANAGER: 'neurolab.data.CIFAR10DataManager',
 	P.KEY_AUGMENT_MANAGER: None, #'neurolab.data.LightCustomAugmentManager',
 	P.KEY_AUGM_STAT_PASSES: 2,
@@ -65,17 +18,11 @@ config_ica = {
 	P.KEY_OPTIM_MANAGER: 'neurolab.optimization.optim.SGDOptimManager',
 	P.KEY_CRIT_METRIC_MANAGER: 'neurolab.optimization.metric.AccMetricManager',
     P.KEY_LEARNING_RATE: 1e-3,
-	P.KEY_LOCAL_LRN_RULE: 'ica', #'hpca', #'ica', #'hwta',
+	P.KEY_LOCAL_LRN_RULE: 'hpca', #'ica', #'hwta',
 	#PP.KEY_WTA_COMPETITIVE_ACT: 'hebb.functional.esoftwta',
 	#PP.KEY_WTA_K: .02,
-	PP.KEY_LRN_ACT: 'hebb.functional.tanh',
-	PP.KEY_LRN_ACT_SCALE_IN: 1e-3, #1.,
-	PP.KEY_LRN_ACT_OFFSET_IN: 0.,
-	PP.KEY_LRN_ACT_SCALE_OUT: 1.,
-	PP.KEY_OUT_ACT: 'hebb.functional.sshrink', #tanh',
-	PP.KEY_OUT_ACT_SCALE_IN: 1e-3, #1.,
-	PP.KEY_OUT_ACT_OFFSET_IN: 0.,
-	PP.KEY_OUT_ACT_SCALE_OUT: 1e-3, #1.,
+	PP.KEY_LRN_ACT: 'hebb.functional.relu',
+	PP.KEY_OUT_ACT: 'hebb.functional.relu',
 }
 
 config_hebb = {

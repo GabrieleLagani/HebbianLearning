@@ -1,10 +1,6 @@
 from neurolab import params as P
 
 # TODO: Add convergence to target performance value(s).
-# TODO: Correct MAP metric and prepare retrieval experiments
-# TODO: add saving of final model in addition to best model. Add possibility to load last model by disabling early stop
-#  and to return final result instead of best result when early stop is disabled. In alternative, save only last model
-#  instead of best when early stop is disabled.
 # TODO: Add plots of weight norms, weight change norms, stopping condition when weights stop changing, elastic weight loss.
 # TODO: Write documentation, add checks on user provided parameters, print exception in try-except-pass blocks, publish pip package.
 # TODO: (as needed)

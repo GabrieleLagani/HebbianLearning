@@ -38,8 +38,8 @@ for ds in datasets:
 				    P.KEY_L2_PENALTY: l2_penalties[ds],
 					P.KEY_DROPOUT_P: 0.5,
 					P.KEY_LOCAL_LRN_RULE: lrn_rule_keys[lrn_rule],
-					PP.KEY_WTA_COMPETITIVE_ACT: lrn_rule_competitive_act[lrn_rule],
-					PP.KEY_WTA_K: lrn_rule_k[lrn_rule],
+					PP.KEY_COMPETITIVE_ACT: lrn_rule_competitive_act[lrn_rule],
+					PP.KEY_COMPETITIVE_K: lrn_rule_k[lrn_rule],
 					P.KEY_DEEP_TEACHER_SIGNAL: lrn_rule_dts[lrn_rule],
 				}
 		

@@ -36,6 +36,7 @@ DEFAULT_CI_LEVELS = [0.9, 0.95, 0.98, 0.99, 0.995] # Confidence interval levels 
 DEFAULT_CONVTHRESHOLDS = [0.02, 0.01, 0.005, 0.002, 0.001] # Percentage levels to be used to measure at which training epoch the result has reached a given percentage of the best result (i.e. the convercence time).
 
 # Environment parameters
+AVAILABLE_DEVICES = ['cpu'] + ['cuda:' + str(i) for i in range(torch.cuda.device_count())]
 DEVICE = 'cpu'
 PROGRESS_INTERVAL = 2 # Periodicity (in seconds) to print progress information while iterating over a dataset (lower bound)
 CHECKPOINT_INTERVAL = 1 # How often to checkpoint the experiment state
@@ -110,10 +111,12 @@ KEY_NUM_VAL_SAMPLES = 'num_val_samples'
 KEY_NUM_TST_SAMPLES = 'num_tst_samples'
 KEY_BATCHSIZE = 'batchsize'
 KEY_WHITEN = 'whiten'
+KEY_WHITEN_FILTER_SIZE = 'whiten_filter_size'
 KEY_AUGMENT_MANAGER = 'augment_manager'
 KEY_AUGM_BEFORE_STATS = 'augm_before_stats'
 KEY_AUGM_STAT_PASSES = 'augm_stat_passes'
 KEY_NUM_EPOCHS = 'num_epochs'
+KEY_EARLY_STOP = 'early_stop'
 KEY_TOPKACC_K = 'topkacc_k'
 KEY_CLASS_SCORES = 'class_scores'
 KEY_RETR_CLASSES = 'retr_classes'

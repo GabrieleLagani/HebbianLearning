@@ -99,7 +99,7 @@ def main():
 	parser = argparse.ArgumentParser()
 	parser.add_argument('--config', default=P.DEFAULT_CONFIG, help="The experiment configuration you want to run.")
 	parser.add_argument('--mode', default=P.DEFAULT_MODE, choices=[P.MODE_TRN, P.MODE_TST, P.MODE_TRNTST], help="Whether you want to run a train or test experiment.")
-	parser.add_argument('--device', default=P.DEVICE, help="The device you want to use for the experiment.")
+	parser.add_argument('--device', default=P.DEVICE, choices=P.AVAILABLE_DEVICES, help="The device you want to use for the experiment.")
 	parser.add_argument('--seeds', nargs='*', default=P.DEFAULT_SEEDS, type=int, help="The RNG seeds you want to use for the experiment.")
 	parser.add_argument('--tokens', nargs='*', default=P.DEFAULT_TOKENS, help="A list of strings to be replaced in special configuration options.")
 	parser.add_argument('--hpsearch', action='store_true', default=P.DEFAULT_HPSEARCH, help="Whether you want to run an hyperparameter search experiment on the selected configuration.")
@@ -111,17 +111,8 @@ def main():
 	parser.add_argument('--branch', default=P.DEFAULT_BRANCH, help="A previous experiment configuration you want to branch from.")
 	args = parser.parse_args()
 	
-	# Get device
-	device = args.device
-	# Check that selected device is available, otherwise switch to cpu
-	if device != 'cpu':
-		try: torch.cuda.get_device_name(device)
-		except:
-			print("Warning: selected device " + device + " not available. Switching to cpu.")
-			device = 'cpu'
-	
 	# Override default params
-	P.DEVICE = device
+	P.DEVICE = args.device
 	P.CLEARHIST = args.clearhist
 	P.GLB_PARAMS[P.KEY_GLB_DATASEEDS] = args.dataseeds
 	
