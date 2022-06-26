@@ -21,12 +21,14 @@ https://github.com/GabrieleLagani/HebbianLearningThesis
 and https://github.com/GabrieleLagani/HebbianPCA,
 containing the latest updates and new Hebbian learning algorithms: 
 Hebbian WTA variants (k-WTA, soft-WTA, ...), Hebbian PCA, Hebbian ICA.
-IMPORTANT: the new implementation based on FastHebb is available, 
-making Hebbian experiments more than 20x faster!!
+
+
+**IMPORTANT: the new implementation based on FastHebb is available**, 
+making Hebbian experiments more than 20x faster!!!
 
 In order to launch an experiment session, type:  
-`PYTHONPATH=<project root> python <project root>/runexp.py --config <dotter.path.to.config.object> --mode <mode> --device <device> --clearhist --restart`  
-Where `<dotter.path.to.config.object>` is the path, in dotted notation,
+`PYTHONPATH=<project root> python <project root>/runexp.py --config <dotted.path.to.config.object> --mode <mode> --device <device> --clearhist --restart`  
+Where `<dotted.path.to.config.object>` is the path, in dotted notation,
 to a dictionary (which can be defined anywhere in the code) containing
 the configuration parameters that you want to use for your experiment;
 `<mode>` is either `train` or `test`; `<device>` is, for example, `cpu`
@@ -36,7 +38,7 @@ can be used to restart an experiment from scratch, instead of resuming
 from a checkpoint.
 
 You can also use:
-`PYTHONPATH=<project root> python <project root>/runstack.py --stack <dotter.path.to.stack.object> --mode <mode> --device <device> --clearhist --restart`  
+`PYTHONPATH=<project root> python <project root>/runstack.py --stack <dotted.path.to.stack.object> --mode <mode> --device <device> --clearhist --restart`  
 to run full stack of experiments (i.e. a list, which can be defined anywhere in the code).
 
 Example:
