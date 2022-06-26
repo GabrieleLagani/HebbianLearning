@@ -24,7 +24,7 @@ Hebbian WTA variants (k-WTA, soft-WTA, ...), Hebbian PCA, Hebbian ICA.
 
 
 **IMPORTANT: the new implementation based on FastHebb is available**, 
-making Hebbian experiments more than 20x faster!!!
+making Hebbian experiments more than 20x faster!!
 
 In order to launch an experiment session, type:  
 `PYTHONPATH=<project root> python <project root>/runexp.py --config <dotted.path.to.config.object> --mode <mode> --device <device> --clearhist --restart`  
