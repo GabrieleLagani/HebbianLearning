@@ -12,7 +12,7 @@ class Retriever(SkClassif):
 	def __init__(self, config, input_shape=None):
 		super(Retriever, self).__init__(config, input_shape)
 		
-		self.N_NEIGHBORS = config.CONFIG_OPTIONS.get(P.KEY_KNN_N_NEIGHBORS, 10)
+		self.N_NEIGHBORS = config.CONFIG_OPTIONS.get(P.KEY_KNN_N_NEIGHBORS, max(list(config.CONFIG_OPTIONS.get(P.KEY_RETR_K, 10))))
 		self.clf = KNeighborsClassifier(n_neighbors=self.N_NEIGHBORS)
 	
 	def compute_output(self, x):

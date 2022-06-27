@@ -19,8 +19,9 @@ class SkClassif(Model):
 		
 		self.NUM_SAMPLES = config.CONFIG_OPTIONS.get(P.KEY_SKCLF_NUM_SAMPLES, config.CONFIG_OPTIONS.get(P.KEY_NUM_TRN_SAMPLES, config.CONFIG_OPTIONS.get(P.KEY_TOT_TRN_SAMPLES, P.GLB_PARAMS[P.KEY_DATASET_METADATA][P.KEY_DS_TRN_SET_SIZE])))
 		self.N_COMPONENTS = config.CONFIG_OPTIONS.get(P.KEY_NYSTROEM_N_COMPONENTS, 100)
+		if self.N_COMPONENTS is None: self.N_COMPONENTS = 0
 		self.N_COMPONENTS = min(self.N_COMPONENTS, self.NUM_SAMPLES)
-		self.nystroem = Nystroem(n_components=self.N_COMPONENTS)
+		self.nystroem = Nystroem(n_components=self.N_COMPONENTS) if self.N_COMPONENTS > 0 else None
 		self.clf = None
 		self.nystroem_fitted = False
 		self.clf_fitted = False
@@ -59,13 +60,15 @@ class SkClassif(Model):
 			if not self.clf_fitted:
 				# Here we use just the first NUM_SAMPLES samples to do a Nystroem approximation, because they are already
 				# a random subset of the dataset. This allows to save memory by avoiding to store the whole dataset.
-				if not self.nystroem_fitted:
-					self.X += x
-					if len(self.X) >= self.N_COMPONENTS:
-						self.X_transformed = self.norm_if_needed(torch.tensor(self.nystroem.fit_transform(self.X), device=P.DEVICE)).tolist()
-						self.nystroem_fitted = True
-						self.X = []
-				else: self.X_transformed += self.norm_if_needed(torch.tensor(self.nystroem.transform(x), device=P.DEVICE)).tolist()
+				if self.nystroem is not None:
+					if not self.nystroem_fitted:
+						self.X += x
+						if len(self.X) >= self.N_COMPONENTS:
+							self.X_transformed = self.norm_if_needed(torch.tensor(self.nystroem.fit_transform(self.X), device=P.DEVICE)).tolist()
+							self.nystroem_fitted = True
+							self.X = []
+					else: self.X_transformed += self.norm_if_needed(torch.tensor(self.nystroem.transform(x), device=P.DEVICE)).tolist()
+				else: self.X_transformed += self.norm_if_needed(torch.tensor(x, device=P.DEVICE)).tolist()
 				
 				# Here we fit the actual classifier
 				if len(self.X_transformed) >= self.NUM_SAMPLES:
