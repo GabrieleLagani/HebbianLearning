@@ -93,7 +93,7 @@ class SkClassif(Model):
 	# Returns classifier predictions for a given input batch
 	def get_clf_pred(self, x):
 		if not self.clf_fitted: return torch.rand((len(x), self.NUM_CLASSES), device=P.DEVICE)
-		return utils.dense2onehot(torch.tensor(self.get_clf_pred(self.nystroem.transform(x)), device=P.DEVICE), self.NUM_CLASSES)
+		return utils.dense2onehot(torch.tensor(self.clf.predict(self.nystroem.transform(x)), device=P.DEVICE), self.NUM_CLASSES)
 		
 	# Set label info for current batch
 	def set_teacher_signal(self, y):

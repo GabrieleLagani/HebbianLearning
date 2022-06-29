@@ -725,7 +725,7 @@ for ds in datasets:
 						P.KEY_AUGMENT_MANAGER: None,
 						P.KEY_AUGM_STAT_PASSES: da_mult[da],
 						P.KEY_AUGM_BEFORE_STATS: True,
-						P.KEY_WHITEN:  None if lrn_rule != 'hwta' else 2,
+						P.KEY_WHITEN: None if lrn_rule_keys[lrn_rule] != 'hwta' else 2,
 						P.KEY_TOT_TRN_SAMPLES: tot_trn_samples[ds],
 						P.KEY_NUM_TRN_SAMPLES: retr_num_samples[ds],
 						P.KEY_BATCHSIZE: batch_sizes[ds],

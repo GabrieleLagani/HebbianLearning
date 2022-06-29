@@ -56,7 +56,7 @@ class Net(Model):
 		self.ACT_COMPLEMENT_RATIO = 0.
 		self.ACT_COMPLEMENT_ADAPT = None
 		self.ACT_COMPLEMENT_GRP = False
-		self.GATING = H.HebbianConv2d.GATE_BASE
+		self.GATING = H.HebbianConv2d.GATE_HEBB
 		self.UPD_RULE = H.HebbianConv2d.UPD_RECONSTR
 		self.RECONSTR = H.HebbianConv2d.REC_LIN_CMB
 		self.RED = H.HebbianConv2d.RED_AVG
@@ -73,6 +73,7 @@ class Net(Model):
 			if LRN_ACT is None: self.lrn_act = HF.identity
 			if OUT_SIM is None: self.out_sim = HF.vector_proj2d
 			if OUT_ACT is None: self.out_act = F.relu
+			self.GATING = H.HebbianConv2d.GATE_BASE
 			self.RECONSTR = H.HebbianConv2d.REC_QNT_SGN
 			self.RED = H.HebbianConv2d.RED_W_AVG
 		if self.LOC_LRN_RULE in ['ica', 'hica', 'ica_nrm', 'hica_nrm']:
@@ -87,6 +88,7 @@ class Net(Model):
 			if self.LOC_LRN_RULE == 'ica_nrm': self.UPD_RULE = H.HebbianConv2d.UPD_ICA_NRM
 			if self.LOC_LRN_RULE == 'hica_nrm': self.UPD_RULE = H.HebbianConv2d.UPD_HICA_NRM
 			if self.LOC_LRN_RULE in ['ica_nrm', 'hica_nrm']: self.VAR_ADAPTIVE = True
+			self.GATING = H.HebbianConv2d.GATE_BASE
 		if self.LRN_SIM_EXP is not None: self.lrn_sim = HF.get_exp_sim(HF.get_affine_sim(self.lrn_sim, p=self.LRN_SIM_EXP), HF.get_pow_nc(utils.retrieve(config.CONFIG_OPTIONS.get(PP.KEY_LRN_SIM_NC, None)), self.LRN_SIM_EXP))
 		self.lrn_sim = HF.get_affine_sim(self.lrn_sim, self.LRN_SIM_B, self.LRN_SIM_S, self.LRN_SIM_P)
 		self.lrn_act = HF.get_affine_act(self.lrn_act, self.LRN_ACT_SCALE_IN, self.LRN_ACT_SCALE_OUT, self.LRN_ACT_OFFSET_IN, self.LRN_ACT_OFFSET_OUT, self.LRN_ACT_P)
@@ -105,7 +107,7 @@ class Net(Model):
 			kernel_size=5,
 			lrn_sim=self.lrn_sim,
 			lrn_act=self.lrn_act,
-			lrn_cmp=self.competitive_act is not None,
+			lrn_cmp=True,
 			lrn_t=True,
 			out_sim=self.out_sim,
 			out_act=self.out_act,
