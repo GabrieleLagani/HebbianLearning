@@ -4,6 +4,7 @@ import torch.nn.functional as F
 from neurolab import params as P
 from neurolab import utils
 from neurolab.model import Model
+import params as PP
 
 
 class Net(Model):
@@ -23,6 +24,7 @@ class Net(Model):
 		super(Net, self).__init__(config, input_shape)
 		
 		self.NUM_CLASSES = P.GLB_PARAMS[P.KEY_DATASET_METADATA][P.KEY_DS_NUM_CLASSES]
+		self.NUM_HIDDEN = config.CONFIG_OPTIONS.get(PP.KEY_NUM_HIDDEN, 4096)
 		self.DROPOUT_P = config.CONFIG_OPTIONS.get(P.KEY_DROPOUT_P, 0.5)
 		
 		# Here we define the layers of our network
@@ -34,9 +36,9 @@ class Net(Model):
 		self.CONV_OUTPUT_SIZE = utils.shape2size(utils.tens2shape(self.get_dummy_fmap()[self.CONV_OUTPUT]))
 		
 		# FC Layers
-		self.fc5 = nn.Linear(self.CONV_OUTPUT_SIZE, 4096)  # conv_output_size-dimensional input, 4096-dimensional output
-		self.bn5 = nn.BatchNorm1d(4096)  # Batch Norm layer
-		self.fc6 = nn.Linear(4096, self.NUM_CLASSES) # 4096-dimensional input, NUM_CLASSES-dimensional output (one per class)
+		self.fc5 = nn.Linear(self.CONV_OUTPUT_SIZE, self.NUM_HIDDEN)  # conv_output_size-dimensional input, self.NUM_HIDDEN-dimensional output
+		self.bn5 = nn.BatchNorm1d(self.NUM_HIDDEN)  # Batch Norm layer
+		self.fc6 = nn.Linear(self.NUM_HIDDEN, self.NUM_CLASSES) # self.NUM_HIDDEN-dimensional input, NUM_CLASSES-dimensional output (one per class)
 	
 	def get_conv_output(self, x):
 		# Layer 4: Convolutional + ReLU activations + Batch Norm

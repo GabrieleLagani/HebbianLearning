@@ -17,9 +17,11 @@ import params as P
 #       presynaptic gating, repulsive competition, backward feedback, hebbian rules from other losses, splitting nonlinearities,
 #       recurrent computation and lca, differentiable plasticity, competitive interaction in backward, competitive
 #       nonlinearity with identity backward
-#   - PCA with neurons with multiple different bias targets to achieve multiple splits
+#   - Reconstruction with bias, PCA with neurons with multiple different bias targets to achieve multiple splits --> can
+#       be done stacking multiple layers?
 #   - Clustering with gauss nonlinearity integrated with vector projection similarity using weight vector as mean
 #       encoding and bias for variance, so that it is possible to find aligned clusters with dot product-based similarity.
+#   - Consider removing border artifacts due to possible padding
 
 
 # A generalized normalization layer

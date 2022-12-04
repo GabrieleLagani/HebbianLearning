@@ -15,6 +15,6 @@ class KNNClassifier(SkClassif):
 	
 	def get_clf_pred(self, x):
 		if not self.clf_fitted: return torch.rand((len(x), self.NUM_CLASSES), device=P.DEVICE)
-		return torch.tensor(self.clf.predict_proba(self.nystroem.transform(x)), device=P.DEVICE)
+		return torch.tensor(self.clf.predict_proba(x), device=P.DEVICE)
 	
 	

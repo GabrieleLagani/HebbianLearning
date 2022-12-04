@@ -69,7 +69,7 @@ class BtmUpExperiment(Experiment):
 			if '::' not in key:
 				if key != P.KEY_SUBCONFIG_LIST and key != P.KEY_HPMANAGER and key != P.KEY_HPSEARCH_PARAMS and key != P.KEY_EXPERIMENT:
 					# Keys without '::' are considered common to all sub-experiments, except for hpsearch and subconfig
-					# keys that are for the btmup experiment.. also, note that the experiment type should not be
+					# keys that are for the btmup experiment. Also, note that the experiment type should not be
 					# overridden when going from the btmup experiment to the sub-experiments
 					CONFIG_OPTIONS[key] = self.config.CONFIG_OPTIONS[key]
 			else: # Key in the form e.g. 'exp0+exp1::key_name', representing a key for experiments 0 and 1

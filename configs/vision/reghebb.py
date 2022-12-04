@@ -35,7 +35,7 @@ for ds in datasets:
 					P.KEY_LR_DECAY: 0.5 if da == 'no_da' else 0.1,
 				    P.KEY_MILESTONES: range(10, 20) if da == 'no_da' else [20, 30] if da == 'light_da' else [40, 70, 90],
 				    P.KEY_MOMENTUM: 0.9,
-				    P.KEY_L2_PENALTY: l2_penalties[ds],
+				    P.KEY_L2_PENALTY: l2_penalties[ds + da_names[da]],
 					P.KEY_DROPOUT_P: 0.5,
 					P.KEY_LOCAL_LRN_RULE: lrn_rule_keys[lrn_rule],
 					PP.KEY_COMPETITIVE_ACT: lrn_rule_competitive_act[lrn_rule],
@@ -68,7 +68,7 @@ for ds in datasets:
 				P.KEY_LR_DECAY: 0.5 if da == 'no_da' else 0.1,
 			    P.KEY_MILESTONES: range(10, 20) if da == 'no_da' else [20, 30] if da == 'light_da' else [40, 70, 90],
 			    P.KEY_MOMENTUM: 0.9,
-			    P.KEY_L2_PENALTY: l2_penalties[ds],
+			    P.KEY_L2_PENALTY: l2_penalties[ds + da_names[da]],
 				P.KEY_DROPOUT_P: 0.5,
 			}
 			

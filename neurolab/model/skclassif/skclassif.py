@@ -18,7 +18,7 @@ class SkClassif(Model):
 		self.NUM_CLASSES = P.GLB_PARAMS[P.KEY_DATASET_METADATA][P.KEY_DS_NUM_CLASSES]
 		
 		self.NUM_SAMPLES = config.CONFIG_OPTIONS.get(P.KEY_SKCLF_NUM_SAMPLES, config.CONFIG_OPTIONS.get(P.KEY_NUM_TRN_SAMPLES, config.CONFIG_OPTIONS.get(P.KEY_TOT_TRN_SAMPLES, P.GLB_PARAMS[P.KEY_DATASET_METADATA][P.KEY_DS_TRN_SET_SIZE])))
-		self.N_COMPONENTS = config.CONFIG_OPTIONS.get(P.KEY_NYSTROEM_N_COMPONENTS, 100)
+		self.N_COMPONENTS = config.CONFIG_OPTIONS.get(P.KEY_NYSTROEM_N_COMPONENTS, 0)
 		if self.N_COMPONENTS is None: self.N_COMPONENTS = 0
 		self.N_COMPONENTS = min(self.N_COMPONENTS, self.NUM_SAMPLES)
 		self.nystroem = Nystroem(n_components=self.N_COMPONENTS) if self.N_COMPONENTS > 0 else None
@@ -28,6 +28,7 @@ class SkClassif(Model):
 		self.X = []
 		self.X_transformed = []
 		self.y = []
+		self.binarize = config.CONFIG_OPTIONS.get(P.KEY_SKCLF_BINARIZE, True)
 		self.normalize = config.CONFIG_OPTIONS.get(P.KEY_SKCLF_NORM, False)
 	
 	def state_dict(self):
@@ -51,9 +52,13 @@ class SkClassif(Model):
 		norm_x += (norm_x == 0).float()  # Prevent divisions by zero
 		return x / norm_x
 	
+	def binarize_if_needed(self, x):
+		if not self.binarize: return x
+		return (x >= 0).float()
+	
 	# Here we define the flow of information through the network
 	def forward(self, x):
-		x = self.norm_if_needed(x.view(x.size(0), -1)).tolist() # Normalize input if needed
+		x = self.binarize_if_needed(x.view(x.size(0), -1)).tolist() # Binarize input if needed
 		
 		# Here we append inputs to training pipeline if we are in training mode
 		if self.training:
@@ -77,7 +82,7 @@ class SkClassif(Model):
 					self.X_transformed = []
 					self.y = []
 		
-		return self.compute_output(x)
+		return self.compute_output(self.norm_if_needed(self.nystroem.transform(x) if self.nystroem is not None else x))
 	
 	# Process incput batch and compute output dictionary
 	def compute_output(self, x):
@@ -93,7 +98,7 @@ class SkClassif(Model):
 	# Returns classifier predictions for a given input batch
 	def get_clf_pred(self, x):
 		if not self.clf_fitted: return torch.rand((len(x), self.NUM_CLASSES), device=P.DEVICE)
-		return utils.dense2onehot(torch.tensor(self.clf.predict(self.nystroem.transform(x)), device=P.DEVICE), self.NUM_CLASSES)
+		return utils.dense2onehot(torch.tensor(self.clf.predict(x), device=P.DEVICE), self.NUM_CLASSES)
 		
 	# Set label info for current batch
 	def set_teacher_signal(self, y):

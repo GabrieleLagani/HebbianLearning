@@ -4,6 +4,7 @@ import torch.nn.functional as F
 from neurolab import params as P
 from neurolab import utils
 from neurolab.model import Model
+import params as PP
 
 
 class Net(Model):
@@ -18,15 +19,16 @@ class Net(Model):
 		super(Net, self).__init__(config, input_shape)
 		
 		self.NUM_CLASSES = P.GLB_PARAMS[P.KEY_DATASET_METADATA][P.KEY_DS_NUM_CLASSES]
+		self.NUM_HIDDEN = config.CONFIG_OPTIONS.get(PP.KEY_NUM_HIDDEN, 4096)
 		self.DROPOUT_P = config.CONFIG_OPTIONS.get(P.KEY_DROPOUT_P, 0.5)
 		self.INPUT_SIZE = utils.shape2size(self.get_input_shape())
 		
 		# Here we define the layers of our network
 		
 		# FC Layers
-		self.fc1 = nn.Linear(self.INPUT_SIZE, 4096)  # input_size-dimensional input, 4096-dimensional output
-		self.bn1 = nn.BatchNorm1d(4096)  # Batch Norm layer
-		self.fc2 = nn.Linear(4096, self.NUM_CLASSES) # 4096-dimensional input, NUM_CLASSES-dimensional output (one per class)
+		self.fc1 = nn.Linear(self.INPUT_SIZE, self.NUM_HIDDEN)  # input_size-dimensional input, self.NUM_HIDDEN-dimensional output
+		self.bn1 = nn.BatchNorm1d(self.NUM_HIDDEN)  # Batch Norm layer
+		self.fc2 = nn.Linear(self.NUM_HIDDEN, self.NUM_CLASSES) # self.NUM_HIDDEN-dimensional input, NUM_CLASSES-dimensional output (one per class)
 	
 	# Here we define the flow of information through the network
 	def forward(self, x):

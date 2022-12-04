@@ -35,6 +35,12 @@ def tens2shape(input):
 def dense2onehot(tensor, n):
 	return torch.zeros(tensor.size(0), n, device=tensor.device).scatter_(1, tensor.unsqueeze(1).long(), 1)
 
+# Decomposes number into two integer factors as close as possible
+def get_factors(n):
+	i = int(n**0.5 + 0.5) # Fudged to deal with float root precision errors
+	while n % i != 0: i -= 1
+	return i, n // i
+
 # Checks whether curr_res is better than best_res according whether the evaluation is HB or LB
 def is_better(curr_res, best_res, hb):
 	if best_res is None: return True

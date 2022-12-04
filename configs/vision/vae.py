@@ -99,7 +99,7 @@ for ds in datasets:
 			    P.KEY_LR_DECAY: 0.5 if da == 'no_da' else 0.1,
 		        P.KEY_MILESTONES: range(10, 20) if da == 'no_da' else [20, 30] if da == 'light_da' else [40, 70, 90],
 			    P.KEY_MOMENTUM: 0.9,
-			    P.KEY_L2_PENALTY: l2_penalties[ds],
+			    P.KEY_L2_PENALTY: l2_penalties[ds + da_names[da]],
 				P.KEY_DROPOUT_P: 0.5,
 			}
 			
@@ -149,7 +149,7 @@ for ds in datasets:
 			
 			gdes_fc2_on_vae_layer[str(l) + '_' + ds + da_names[da]] = {
 				P.KEY_EXPERIMENT: 'neurolab.experiment.VisionExperiment',
-				P.KEY_NET_MODULES: 'models.gdes.fc2.Net',
+				P.KEY_NET_MODULES: 'models.gdes.fc2.Net', 'mdl1:' + PP.KEY_NUM_HIDDEN: 256,
 				P.KEY_NET_OUTPUTS: 'fc2',
 				P.KEY_DATA_MANAGER: data_managers[ds],
 				P.KEY_AUGMENT_MANAGER: da_managers[da],
@@ -178,7 +178,7 @@ for ds in datasets:
 			
 			gdes_fc2_on_vae_layer_ft[str(l) + '_' + ds + da_names[da]] = {
 				P.KEY_EXPERIMENT: 'neurolab.experiment.VisionExperiment',
-				P.KEY_NET_MODULES: ['models.gdes.vae_' + str(num_layers[ds]) + 'l.Net', 'models.gdes.fc2.Net'],
+				P.KEY_NET_MODULES: ['models.gdes.vae_' + str(num_layers[ds]) + 'l.Net', 'models.gdes.fc2.Net'], 'mdl1:' + PP.KEY_NUM_HIDDEN: 256,
 				P.KEY_NET_MDL_PATHS: [P.PROJECT_ROOT + '/results/configs/vision/vae/config_base_vae[' + ds + da_names[da] + ']/iter' + P.STR_TOKEN + '/models/model0.pt'],
 				P.KEY_NET_OUTPUTS: ['bn' + str(l), 'fc2'],
 				P.KEY_DATA_MANAGER: data_managers[ds],
@@ -199,14 +199,14 @@ for ds in datasets:
 			    P.KEY_LR_DECAY: 0.5 if da == 'no_da' else 0.1,
 		        P.KEY_MILESTONES: range(10, 20) if da == 'no_da' else [20, 30] if da == 'light_da' else [40, 70, 90],
 			    P.KEY_MOMENTUM: 0.9,
-			    P.KEY_L2_PENALTY: l2_penalties[ds],
+			    P.KEY_L2_PENALTY: l2_penalties[ds + da_names[da]],
 				P.KEY_DROPOUT_P: 0.5,
 			}
 			
 			for lrn_rule in lrn_rules:
 				hebb_fc2_on_vae_layer[str(l) + '_' + lrn_rule + '_' + ds + da_names[da]] = {
 					P.KEY_EXPERIMENT: 'neurolab.experiment.VisionExperiment',
-					P.KEY_NET_MODULES: 'models.hebb.fc2.Net',
+					P.KEY_NET_MODULES: 'models.hebb.fc2.Net', 'mdl1:' + PP.KEY_NUM_HIDDEN: 256,
 					P.KEY_NET_OUTPUTS: 'fc2',
 					P.KEY_DATA_MANAGER: data_managers[ds],
 					P.KEY_AUGMENT_MANAGER: da_managers[da],
@@ -233,7 +233,7 @@ for ds in datasets:
 			for lrn_rule in lrn_rules:
 				hebb_fc2_on_vae_layer_ft[str(l) + '_' + lrn_rule + '_' + ds + da_names[da]] = {
 					P.KEY_EXPERIMENT: 'neurolab.experiment.VisionExperiment',
-					P.KEY_NET_MODULES: 'models.hebb.fc2.Net',
+					P.KEY_NET_MODULES: 'models.hebb.fc2.Net', 'mdl1:' + PP.KEY_NUM_HIDDEN: 256,
 					P.KEY_NET_OUTPUTS: 'fc2',
 					P.KEY_DATA_MANAGER: data_managers[ds],
 					P.KEY_AUGMENT_MANAGER: da_managers[da],
@@ -277,9 +277,10 @@ for ds in datasets:
 				P.KEY_KNN_N_NEIGHBORS: retr_num_rel[ds],
 				P.KEY_RETR_NUM_REL: retr_num_rel[ds],
 				P.KEY_RETR_K: retr_k[ds],
-				P.KEY_PRE_NET_MODULES: ['models.gdes.vae_' + str(num_layers[ds]) + 'l.Net'],
-				P.KEY_PRE_NET_MDL_PATHS: [P.PROJECT_ROOT + '/results/configs/vision/vae/config_base_vae[' + ds + da_names[da] + ']/iter' + P.STR_TOKEN + '/models/model0.pt'],
-				P.KEY_PRE_NET_OUTPUTS: ['bn' + str(l)],
+				P.KEY_PRE_NET_MODULES: ['models.gdes.vae_' + str(num_layers[ds]) + 'l.Net', 'models.gdes.fc2.Net'], 'mdl1:' + PP.KEY_NUM_HIDDEN: 256,
+				P.KEY_PRE_NET_MDL_PATHS: [P.PROJECT_ROOT + '/results/configs/vision/vae/config_base_vae[' + ds + da_names[da] + ']/iter' + P.STR_TOKEN + '/models/model0.pt',
+				                          P.PROJECT_ROOT + '/results/configs/vision/vae/gdes_fc2_on_vae_layer[' + str(l) + '_' + ds + da_names[da] + ']/iter' + P.STR_TOKEN + '/models/model0.pt'],
+				P.KEY_PRE_NET_OUTPUTS: ['bn' + str(l), 'bn1'],
 			}
 			
 			prec_on_vae_layer_ft[str(l) + '_' + ds + da_names[da]] = {
@@ -302,9 +303,10 @@ for ds in datasets:
 				P.KEY_KNN_N_NEIGHBORS: retr_num_rel[ds],
 				P.KEY_RETR_NUM_REL: retr_num_rel[ds],
 				P.KEY_RETR_K: retr_k[ds],
-				P.KEY_PRE_NET_MODULES: ['models.gdes.vae_' + str(num_layers[ds]) + 'l.Net'],
-				P.KEY_PRE_NET_MDL_PATHS: [P.PROJECT_ROOT + '/results/configs/vision/vae/gdes_fc_on_vae_layer_ft[' + str(l) + '_' + ds + da_names[da] + ']/iter' + P.STR_TOKEN + '/models/model0.pt'],
-				P.KEY_PRE_NET_OUTPUTS: ['bn' + str(l)],
+				P.KEY_PRE_NET_MODULES: ['models.gdes.vae_' + str(num_layers[ds]) + 'l.Net', 'models.gdes.fc2.Net'], 'mdl1:' + PP.KEY_NUM_HIDDEN: 256,
+				P.KEY_PRE_NET_MDL_PATHS: [P.PROJECT_ROOT + '/results/configs/vision/vae/gdes_fc2_on_vae_layer_ft[' + str(l) + '_' + ds + da_names[da] + ']/iter' + P.STR_TOKEN + '/models/model0.pt',
+				                          P.PROJECT_ROOT + '/results/configs/vision/vae/gdes_fc2_on_vae_layer_ft[' + str(l) + '_' + ds + da_names[da] + ']/iter' + P.STR_TOKEN + '/models/model1.pt'],
+				P.KEY_PRE_NET_OUTPUTS: ['bn' + str(l), 'bn1'],
 			}
 			
 			knn_on_vae_layer[str(l) + '_' + ds + da_names[da]] = {

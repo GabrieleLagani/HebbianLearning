@@ -32,4 +32,5 @@ KEY_OUT_ACT_SCALE_OUT = 'out_act_scale_out'
 KEY_OUT_ACT_OFFSET_IN = 'out_act_offset_in'
 KEY_OUT_ACT_OFFSET_OUT = 'out_act_offset_out'
 KEY_OUT_ACT_P = 'out_act_p'
+KEY_NUM_HIDDEN = 'num_hidden'
 

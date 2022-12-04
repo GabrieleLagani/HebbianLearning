@@ -27,13 +27,13 @@ class CustomAugmentManager(AugmentManager):
 		jit_brightness = config.CONFIG_OPTIONS.get(P.KEY_DA_JIT_BRIGHTNESS, 0.1)
 		jit_contrast = config.CONFIG_OPTIONS.get(P.KEY_DA_JIT_CONTRAST, 0.1)
 		jit_saturation = config.CONFIG_OPTIONS.get(P.KEY_DA_JIT_SATURATION, 0.1)
-		jit_hue = config.CONFIG_OPTIONS.get(P.KEY_DA_JIT_HUE, 20 / 360)
+		jit_hue = config.CONFIG_OPTIONS.get(P.KEY_DA_JIT_HUE, 20)
 		jit_p = config.CONFIG_OPTIONS.get(P.KEY_DA_JIT_P, 0.5)
 		grayscale_p = config.CONFIG_OPTIONS.get(P.KEY_DA_GREYSCALE_P, 0.2)
 		persp_scale = config.CONFIG_OPTIONS.get(P.KEY_DA_PERSP_SCALE, 0.25)
 		persp_p = config.CONFIG_OPTIONS.get(P.KEY_DA_PERSP_P, 0.3)
 		resize_p = config.CONFIG_OPTIONS.get(P.KEY_DA_RESIZE_P, 0.3)
-		rot_degrees = config.CONFIG_OPTIONS.get(P.KEY_DA_ROT_DEGREES, 180)
+		rot_degrees = config.CONFIG_OPTIONS.get(P.KEY_DA_ROT_DEGREES, 180) #30)
 		rot_p = config.CONFIG_OPTIONS.get(P.KEY_DA_ROT_P, 0.3)
 		transl_p = config.CONFIG_OPTIONS.get(P.KEY_DA_TRANSL_P, 0.5)
 		
@@ -47,7 +47,7 @@ class CustomAugmentManager(AugmentManager):
 		# Random blur
 		# Random noise
 		T_augm.append(transforms.RandomApply([
-			transforms.ColorJitter(brightness=jit_brightness, contrast=jit_contrast, saturation=jit_saturation, hue=jit_hue)
+			transforms.ColorJitter(brightness=jit_brightness, contrast=jit_contrast, saturation=jit_saturation, hue=jit_hue/360)
 		], p=jit_p))
 		T_augm.append(transforms.RandomGrayscale(p=grayscale_p))
 		T_augm.append(transforms.RandomHorizontalFlip())

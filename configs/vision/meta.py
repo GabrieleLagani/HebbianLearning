@@ -35,12 +35,16 @@ hebb_lrn_rates = {'hpca': {'mnist': 1e-3, 'cifar10': 1e-3, 'cifar100': 1e-3, 'ti
                  'ica_nrm': {'mnist': 1e-3, 'cifar10': 1e-3, 'cifar100': 1e-3, 'tinyimagenet': 1e-3, 'imagenet': 1e-4},
                  'hwta': {'mnist': 1e-3, 'cifar10': 1e-3, 'cifar100': 1e-3, 'tinyimagenet': 1e-3, 'imagenet': 1e-3}
                  }
-l2_penalties = {'mnist': 5e-2, 'cifar10': 5e-2, 'cifar100': 1e-2, 'tinyimagenet': 5e-3, 'imagenet': 1e-3}
+l2_penalties = {'mnist': 5e-2, 'mnist_lda': 2.5e-2, 'mnist_hda': 2.5e-2,
+                'cifar10': 5e-2, 'cifar10_lda': 2.5e-2, 'cifar10_hda': 2.5e-2,
+                'cifar100': 1e-2, 'cifar100_lda': 5e-3, 'cifar100_hda': 5e-3,
+                'tinyimagenet': 5e-3, 'tinyimagenet_lda': 2.5e-3, 'tinyimagenet_hda': 2.5e-3,
+                'imagenet': 1e-3, 'imagenet_lda': 5e-4, 'imagenet_hda': 5e-4}
 samples_per_class = {'mnist': 5000, 'cifar10': 4000, 'cifar100': 400, 'tinyimagenet': 450, 'imagenet': 1200}
 retr_num_samples = {'mnist': tot_trn_samples['mnist'], 'cifar10': tot_trn_samples['cifar10'], 'cifar100': tot_trn_samples['cifar100'], 'tinyimagenet': tot_trn_samples['tinyimagenet'], 'imagenet': tot_trn_samples['imagenet']}
 retr_num_rel = {'mnist': samples_per_class['mnist'], 'cifar10': samples_per_class['cifar10'], 'cifar100': samples_per_class['cifar100'], 'tinyimagenet': samples_per_class['tinyimagenet'], 'imagenet': samples_per_class['imagenet']}
 retr_k = {ds: [100, retr_num_rel[ds]] for ds in datasets}
-retr_num_nyst = {ds: 1000 for ds in datasets}
+retr_num_nyst = {ds: 0 for ds in datasets}
 smpleff_regimes = {
 	'mnist': [500, 1000, 1500, 2000, 2500, 5000, 12500],
 	'cifar10': [400, 800, 1200, 1600, 2000, 4000, 10000],

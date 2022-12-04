@@ -113,6 +113,16 @@ class Experiment:
 		# Prepare optimizer
 		self.load_optimizer()
 	
+	def specify_config(self, config, idx):
+		spec_config = copy.deepcopy(config)
+		# Pass specific parameters to sub-configuration
+		for key in config.CONFIG_OPTIONS.keys():
+			if ':' in key: # Key in the form e.g. 'mdl0+mdl1:key_name', representing a key for models 0 and 1
+				prefix, k = key.split(':', 1) # Split prefix from suffix at the semicolon
+				if 'mdl' + str(idx) in prefix.split('+'): # Split at '+' and check that the current experiment is among those that need this key
+					spec_config.CONFIG_OPTIONS[k] = copy.deepcopy(config.CONFIG_OPTIONS[key]) # spec_config.CONFIG_OPTIONS[key]
+		return spec_config
+	
 	# Load model objects to be used in the experiment
 	def load_models(self):
 		self.logger.print_and_log("Preparing network...")
@@ -126,7 +136,7 @@ class Experiment:
 				# Load pre-processing network if needed
 				input_shape = self.config.CONFIG_OPTIONS.get(P.KEY_INPUT_SHAPE, None)
 				if i > 0: input_shape = utils.tens2shape(self.select_output(pre_net_list[i - 1].get_dummy_fmap(fwd=True), i - 1))
-				pre_net_list += [utils.retrieve(pre_net_modules[i])(config=self.config, input_shape=input_shape)]
+				pre_net_list += [utils.retrieve(pre_net_modules[i])(config=self.specify_config(self.config, i), input_shape=input_shape)]
 				if pre_net_mdl_paths is not None and i < len(pre_net_mdl_paths) and pre_net_mdl_paths[i] is not None:
 					self.logger.print_and_log("Searching for available saved model for pre-network " + str(i) + "...")
 					pre_net_state = utils.load_dict(os.path.normpath(pre_net_mdl_paths[i]))
@@ -150,7 +160,7 @@ class Experiment:
 		for i in range(len(net_modules)):
 			# Load network models
 			if i > 0: input_shape = utils.tens2shape(self.select_output(net_list[i - 1].get_dummy_fmap(fwd=True), len(pre_net_list) + i - 1))
-			net_list += [utils.retrieve(net_modules[i])(config=self.config, input_shape=input_shape)]
+			net_list += [utils.retrieve(net_modules[i])(config=self.specify_config(self.config, len(pre_net_list) + i), input_shape=input_shape)]
 			if testing_saved_model or (net_mdl_paths is not None and i < len(net_mdl_paths) and net_mdl_paths[i] is not None):
 				# Load network model to be tested or pre-trained network model for fine tuning
 				self.logger.print_and_log("Searching for available saved model for network " + str(i) + "...")

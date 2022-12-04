@@ -27,7 +27,7 @@ class Retriever(SkClassif):
 	
 	def get_clf_pred(self, x):
 		if not self.clf_fitted: return torch.randint(0, self.NUM_CLASSES, (len(x), self.N_NEIGHBORS), device=P.DEVICE)
-		_, idx = self.clf.kneighbors(self.nystroem.transform(x))
+		_, idx = self.clf.kneighbors(x)
 		return torch.tensor(self.clf._y[idx], device=P.DEVICE)
 	
 	

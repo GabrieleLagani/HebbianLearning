@@ -39,6 +39,7 @@ class Net(Model):
 		super(Net, self).__init__(config, input_shape)
 		
 		self.NUM_CLASSES = P.GLB_PARAMS[P.KEY_DATASET_METADATA][P.KEY_DS_NUM_CLASSES]
+		self.NUM_HIDDEN = config.CONFIG_OPTIONS.get(PP.KEY_NUM_HIDDEN, 4096)
 		self.DROPOUT_P = config.CONFIG_OPTIONS.get(P.KEY_DROPOUT_P, 0.5)
 		self.NUM_LATENT_VARS = config.CONFIG_OPTIONS.get(PP.KEY_VAE_NUM_LATENT_VARS, 256)
 		
@@ -61,16 +62,16 @@ class Net(Model):
 		self.CONV_OUTPUT_SIZE = utils.shape2size(self.CONV_OUTPUT_SHAPE)
 		
 		# FC Layers
-		self.fc5 = nn.Linear(self.CONV_OUTPUT_SIZE, 4096) # conv_output_size-dimensional input, 4096-dimensional output
-		self.bn5 = nn.BatchNorm1d(4096) # Batch Norm layer
-		self.fc6 = nn.Linear(4096, self.NUM_CLASSES) # 4096-dimensional input, NUM_CLASSES-dimensional output (one per class)
-		self.fc_mu =  nn.Linear(4096, self.NUM_LATENT_VARS)  # 4096-dimensional input, NUM_LATENT_VARS-dimensional output
-		self.fc_var =  nn.Linear(4096, self.NUM_LATENT_VARS)  # 4096-dimensional input, NUM_LATENT_VARS-dimensional output
+		self.fc5 = nn.Linear(self.CONV_OUTPUT_SIZE, self.NUM_HIDDEN) # conv_output_size-dimensional input, self.NUM_HIDDEN-dimensional output
+		self.bn5 = nn.BatchNorm1d(self.NUM_HIDDEN) # Batch Norm layer
+		self.fc6 = nn.Linear(self.NUM_HIDDEN, self.NUM_CLASSES) # self.NUM_HIDDEN-dimensional input, NUM_CLASSES-dimensional output (one per class)
+		self.fc_mu =  nn.Linear(self.NUM_HIDDEN, self.NUM_LATENT_VARS)  # self.NUM_HIDDEN-dimensional input, NUM_LATENT_VARS-dimensional output
+		self.fc_var =  nn.Linear(self.NUM_HIDDEN, self.NUM_LATENT_VARS)  # self.NUM_HIDDEN-dimensional input, NUM_LATENT_VARS-dimensional output
 		
 		# Decoding Layers
-		self.dec_fc0 = nn.Linear(self.NUM_LATENT_VARS, 4096)  # NUM_LATENT_VARS-dimensional input, 4096-dimensional output
-		self.dec_bn0 = nn.BatchNorm1d(4096)  # Batch Norm layer
-		self.dec_fc1 = nn.Linear(4096, self.CONV_OUTPUT_SIZE)  # 4096-dimensional input, CONV_OUTPUT_SIZE-dimensional output
+		self.dec_fc0 = nn.Linear(self.NUM_LATENT_VARS, self.NUM_HIDDEN)  # NUM_LATENT_VARS-dimensional input, self.NUM_HIDDEN-dimensional output
+		self.dec_bn0 = nn.BatchNorm1d(self.NUM_HIDDEN)  # Batch Norm layer
+		self.dec_fc1 = nn.Linear(self.NUM_HIDDEN, self.CONV_OUTPUT_SIZE)  # self.NUM_HIDDEN-dimensional input, CONV_OUTPUT_SIZE-dimensional output
 		self.dec_bn1 = nn.BatchNorm1d(self.CONV_OUTPUT_SIZE)  # Batch Norm layer
 		self.dec_conv2 = nn.ConvTranspose2d(256, 192, 3) # 256 input channels, 192 output channels, 3x3 transpose convolutions
 		self.dec_bn2 = nn.BatchNorm2d(192) # Batch Norm layer

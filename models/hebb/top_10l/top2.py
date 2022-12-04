@@ -45,6 +45,7 @@ class Net(Model):
 		super(Net, self).__init__(config, input_shape)
 		
 		self.NUM_CLASSES = P.GLB_PARAMS[P.KEY_DATASET_METADATA][P.KEY_DS_NUM_CLASSES]
+		self.NUM_HIDDEN = config.CONFIG_OPTIONS.get(PP.KEY_NUM_HIDDEN, 4096)
 		self.DEEP_TEACHER_SIGNAL = config.CONFIG_OPTIONS.get(P.KEY_DEEP_TEACHER_SIGNAL, False)
 		LRN_SIM = config.CONFIG_OPTIONS.get(PP.KEY_LRN_SIM, None)
 		LRN_ACT = config.CONFIG_OPTIONS.get(PP.KEY_LRN_ACT, None)
@@ -285,7 +286,7 @@ class Net(Model):
 		
 		self.fc9 = H.HebbianConv2d(
 			in_channels=self.CONV_OUTPUT_SHAPE[0],
-			out_channels=4096,
+			out_channels=self.NUM_HIDDEN,
 			kernel_size=(self.CONV_OUTPUT_SHAPE[1], self.CONV_OUTPUT_SHAPE[2]),
 			lrn_sim=self.lrn_sim,
 			lrn_act=self.lrn_act,
@@ -293,7 +294,7 @@ class Net(Model):
 			lrn_t=True,
 			out_sim=self.out_sim,
 			out_act=self.out_act,
-			competitive=H.Competitive(out_size=(64, 64), competitive_act=self.competitive_act, k=self.K),
+			competitive=H.Competitive(out_size=utils.get_factors(self.NUM_HIDDEN), competitive_act=self.competitive_act, k=self.K),
 			act_complement_init=self.ACT_COMPLEMENT_INIT,
 			act_complement_ratio=self.ACT_COMPLEMENT_RATIO,
 			act_complement_adapt=self.ACT_COMPLEMENT_ADAPT,
@@ -305,11 +306,11 @@ class Net(Model):
 			reduction=self.RED,
 			alpha_l=self.ALPHA_L,
 			alpha_g=self.ALPHA_G,
-		)  # conv_output_shape-shaped input, 64x64=4096 output channels
-		self.bn9 = nn.BatchNorm2d(4096)  # Batch Norm layer
+		)  # conv_output_shape-shaped input, 64x64=self.NUM_HIDDEN output channels
+		self.bn9 = nn.BatchNorm2d(self.NUM_HIDDEN)  # Batch Norm layer
 		
 		self.fc10 = H.HebbianConv2d(
-			in_channels=4096,
+			in_channels=self.NUM_HIDDEN,
 			out_channels=self.NUM_CLASSES,
 			kernel_size=1,
 			lrn_sim=HF.get_affine_sim(HF.raised_cos_sim2d, p=2),
@@ -325,7 +326,7 @@ class Net(Model):
 			reduction=H.HebbianConv2d.RED_W_AVG,
 			alpha_l=self.ALPHA_L,
 			alpha_g=self.ALPHA_G if self.ALPHA_G == 0. else 1.,
-		)  # 4096-dimensional input, NUM_CLASSES-dimensional output (one per class)
+		)  # self.NUM_HIDDEN-dimensional input, NUM_CLASSES-dimensional output (one per class)
 	
 	def get_conv_output(self, x):
 		# Layer 3: Convolutional + 2x2 Max Pooling + Batch Norm
@@ -415,7 +416,7 @@ class Net(Model):
 			l6_knl_per_class = 240 // self.NUM_CLASSES
 			l7_knl_per_class = 360 // self.NUM_CLASSES
 			l8_knl_per_class = 500 // self.NUM_CLASSES
-			l9_knl_per_class = 4000 // self.NUM_CLASSES
+			l9_knl_per_class = self.NUM_HIDDEN // self.NUM_CLASSES
 			if self.NUM_CLASSES <= 20:
 				self.conv3.set_teacher_signal(
 					torch.cat((

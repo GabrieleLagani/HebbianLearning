@@ -14,10 +14,12 @@ class MAPMetric:
 		
 	def __call__(self, outputs, targets):
 		num_retr = outputs.size(1)
-		k = min(num_retr, self.K)
 		outputs = (outputs == targets.view(-1, 1)).float()
 		prec_at_i = outputs.cumsum(dim=1)/torch.arange(1, num_retr + 1, device=P.DEVICE).float().view(1, -1)
-		map = (outputs[:, :k] * prec_at_i[:, :k]).sum(dim=1)/min(k, self.NUM_REL)
+		k = min(num_retr, self.K)
+		num_retr_rel = outputs[:, :k].sum(dim=1)
+		num_retr_rel = torch.maximum(num_retr_rel, torch.ones_like(num_retr_rel))
+		map = (outputs[:, :k] * prec_at_i[:, :k]).sum(dim=1)/num_retr_rel
 		return map.mean().item()
 
 # Criterion manager for average precision score @k

@@ -62,6 +62,7 @@ class Net(Model):
 		super(Net, self).__init__(config, input_shape)
 		
 		self.NUM_CLASSES = P.GLB_PARAMS[P.KEY_DATASET_METADATA][P.KEY_DS_NUM_CLASSES]
+		self.NUM_HIDDEN = config.CONFIG_OPTIONS.get(PP.KEY_NUM_HIDDEN, 4096)
 		self.DROPOUT_P = config.CONFIG_OPTIONS.get(P.KEY_DROPOUT_P, 0.5)
 		self.NUM_LATENT_VARS = config.CONFIG_OPTIONS.get(PP.KEY_VAE_NUM_LATENT_VARS, 256)
 		self.ELBO_BETA = config.CONFIG_OPTIONS.get(P.KEY_ELBO_BETA, 1.)
@@ -132,13 +133,13 @@ class Net(Model):
 		self.CONV_OUTPUT_SIZE = self.OUTPUT_FMAP_SIZE[self.CONV_OUTPUT]
 		
 		# FC Layers
-		self.fc9 = nn.Linear(self.CONV_OUTPUT_SIZE, 4096) # conv_output_size-dimensional input, 4096-dimensional output
-		self.bn9 = nn.BatchNorm1d(4096) # Batch Norm layer
+		self.fc9 = nn.Linear(self.CONV_OUTPUT_SIZE, self.NUM_HIDDEN) # conv_output_size-dimensional input, self.NUM_HIDDEN-dimensional output
+		self.bn9 = nn.BatchNorm1d(self.NUM_HIDDEN) # Batch Norm layer
 		self.fc9_delta_w = torch.zeros_like(self.fc9.weight)
 		self.fc9_delta_bias = torch.zeros_like(self.fc9.bias)
 		self.bn9_delta_w = torch.zeros_like(self.bn9.weight)
 		self.bn9_delta_bias = torch.zeros_like(self.bn9.bias)
-		self.fc10 = nn.Linear(4096, self.NUM_CLASSES) # 4096-dimensional input, NUM_CLASSES-dimensional output (one per class)
+		self.fc10 = nn.Linear(self.NUM_HIDDEN, self.NUM_CLASSES) # self.NUM_HIDDEN-dimensional input, NUM_CLASSES-dimensional output (one per class)
 		
 		# Latent variable mapping layers
 		self.fc_mu1 = nn.Linear(self.OUTPUT_FMAP_SIZE[self.BN1], self.NUM_LATENT_VARS)  # bn1_output_size-dimensional input, NUM_LATENT_VARS-dimensional output
@@ -189,17 +190,17 @@ class Net(Model):
 		self.fc_mu8_delta_bias = torch.zeros_like(self.fc_mu8.bias)
 		self.fc_var8_delta_w = torch.zeros_like(self.fc_var8.weight)
 		self.fc_var8_delta_bias = torch.zeros_like(self.fc_var8.bias)
-		self.fc_mu9 = nn.Linear(4096, self.NUM_LATENT_VARS)  # 4096-dimensional input, NUM_LATENT_VARS-dimensional output
-		self.fc_var9 = nn.Linear(4096, self.NUM_LATENT_VARS)  # 4096-dimensional input, NUM_LATENT_VARS-dimensional output
+		self.fc_mu9 = nn.Linear(self.NUM_HIDDEN, self.NUM_LATENT_VARS)  # self.NUM_HIDDEN-dimensional input, NUM_LATENT_VARS-dimensional output
+		self.fc_var9 = nn.Linear(self.NUM_HIDDEN, self.NUM_LATENT_VARS)  # self.NUM_HIDDEN-dimensional input, NUM_LATENT_VARS-dimensional output
 		self.fc_mu9_delta_w = torch.zeros_like(self.fc_mu9.weight)
 		self.fc_mu9_delta_bias = torch.zeros_like(self.fc_mu9.bias)
 		self.fc_var9_delta_w = torch.zeros_like(self.fc_var9.weight)
 		self.fc_var9_delta_bias = torch.zeros_like(self.fc_var9.bias)
 		
 		# Decoding Layers
-		self.dec_fc0 = nn.Linear(self.NUM_LATENT_VARS, 4096)  # NUM_LATENT_VARS-dimensional input, 4096-dimensional output
-		self.dec_bn0 = nn.BatchNorm1d(4096)  # Batch Norm layer
-		self.dec_fc1 = nn.Linear(4096, self.CONV_OUTPUT_SIZE)  # 4096-dimensional input, CONV_OUTPUT_SIZE-dimensional output
+		self.dec_fc0 = nn.Linear(self.NUM_LATENT_VARS, self.NUM_HIDDEN)  # NUM_LATENT_VARS-dimensional input, self.NUM_HIDDEN-dimensional output
+		self.dec_bn0 = nn.BatchNorm1d(self.NUM_HIDDEN)  # Batch Norm layer
+		self.dec_fc1 = nn.Linear(self.NUM_HIDDEN, self.CONV_OUTPUT_SIZE)  # self.NUM_HIDDEN-dimensional input, CONV_OUTPUT_SIZE-dimensional output
 		self.dec_fc0_delta_w = torch.zeros_like(self.dec_fc0.weight)
 		self.dec_fc0_delta_bias = torch.zeros_like(self.dec_fc0.bias)
 		self.dec_bn0_delta_w = torch.zeros_like(self.dec_bn0.weight)

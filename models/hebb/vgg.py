@@ -10,22 +10,23 @@ import hebb as H
 from hebb import functional as HF
 
 
+layer_seq = {
+	'VGG11': [64, 'M', 128, 'M', 256, 256, 'M', 512, 512, 'M', 512, 512, 'M'],
+	'VGG13': [64, 64, 'M', 128, 128, 'M', 256, 256, 'M', 512, 512, 'M', 512, 512, 'M'],
+	'VGG16': [64, 64, 'M', 128, 128, 'M', 256, 256, 256, 'M', 512, 512, 512, 'M', 512, 512, 512, 'M'],
+	'VGG19': [64, 64, 'M', 128, 128, 'M', 256, 256, 256, 256, 'M', 512, 512, 512, 512, 'M', 512, 512, 512, 512, 'M'],
+}
+
+
 class Net(Model):
 	# Layer names
-	CONV8 = 'conv8'
-	RELU8 = 'relu8'
-	BN8 = 'bn8'
-	CONV_OUTPUT = BN8 # Symbolic name for the last convolutional layer providing extracted features
-	FLAT = 'flat'
-	FC9 = 'fc9'
-	RELU9 = 'relu9'
-	BN9 = 'bn9'
-	FC10 = 'fc10'
-	CLASS_SCORES = 'class_scores' # Name of the classification output providing the class scores
+	CONV_OUTPUT = 'conv_output'
+	CLASS_SCORES = 'class_scores'
 	
 	def __init__(self, config, input_shape=None):
 		super(Net, self).__init__(config, input_shape)
 		
+		self.VGG_NAME = 'VGG11'
 		self.NUM_CLASSES = P.GLB_PARAMS[P.KEY_DATASET_METADATA][P.KEY_DS_NUM_CLASSES]
 		self.NUM_HIDDEN = config.CONFIG_OPTIONS.get(PP.KEY_NUM_HIDDEN, 4096)
 		self.DEEP_TEACHER_SIGNAL = config.CONFIG_OPTIONS.get(P.KEY_DEEP_TEACHER_SIGNAL, False)
@@ -104,141 +105,101 @@ class Net(Model):
 		self.ALPHA_L = config.CONFIG_OPTIONS.get(P.KEY_ALPHA_L, 1.)
 		self.ALPHA_G = config.CONFIG_OPTIONS.get(P.KEY_ALPHA_G, 0.)
 		
+		
 		# Here we define the layers of our network
 		
-		# Eighth convolutional layer
-		self.conv8 = H.HebbianConv2d(
-			in_channels=384,
-			out_channels=512,
-			kernel_size=3,
-			lrn_sim=self.lrn_sim,
-			lrn_act=self.lrn_act,
-			lrn_cmp=True,
-			lrn_t=True,
-			out_sim=self.out_sim,
-			out_act=self.out_act,
-			competitive=H.Competitive(out_size=(16, 32), competitive_act=self.competitive_act, k=self.K),
-			act_complement_init=self.ACT_COMPLEMENT_INIT,
-			act_complement_ratio=self.ACT_COMPLEMENT_RATIO,
-			act_complement_adapt=self.ACT_COMPLEMENT_ADAPT,
-			act_complement_grp=self.ACT_COMPLEMENT_GRP,
-			var_adaptive=self.VAR_ADAPTIVE,
-			gating=self.GATING,
-			upd_rule=self.UPD_RULE,
-			reconstruction=self.RECONSTR,
-			reduction=self.RED,
-			alpha_l=self.ALPHA_L,
-			alpha_g=self.ALPHA_G,
-		)  # 384 input channels, 16x32=512 output channels, 3x3 convolutions
-		self.bn8 = nn.BatchNorm2d(512)  # Batch Norm layer
+		layers = []
+		in_channels = 3
+		for x in layer_seq[self.VGG_NAME]:
+			if x == 'M':
+				layers += [nn.MaxPool2d(kernel_size=2, stride=2)]
+			else:
+				layers += [nn.ZeroPad2d(padding=1)]
+				layers += [H.HebbianConv2d(
+					in_channels=in_channels,
+					out_channels=x,
+					kernel_size=3,
+					lrn_sim=self.lrn_sim,
+					lrn_act=self.lrn_act,
+					lrn_cmp=True,
+					lrn_t=True,
+					out_sim=self.out_sim,
+					out_act=self.out_act,
+					competitive=H.Competitive(out_size=utils.get_factors(x), competitive_act=self.competitive_act, k=self.K),
+					act_complement_init=self.ACT_COMPLEMENT_INIT,
+					act_complement_ratio=self.ACT_COMPLEMENT_RATIO,
+					act_complement_adapt=self.ACT_COMPLEMENT_ADAPT,
+					act_complement_grp=self.ACT_COMPLEMENT_GRP,
+					var_adaptive=self.VAR_ADAPTIVE,
+					gating=self.GATING,
+					upd_rule=self.UPD_RULE,
+					reconstruction=self.RECONSTR,
+					reduction=self.RED,
+					alpha_l=self.ALPHA_L,
+					alpha_g=self.ALPHA_G,
+				)]
+				
+				layers += [nn.ReLU(inplace=True), nn.BatchNorm2d(x)]
+				in_channels = x
+		
+		self.features = nn.Sequential(*layers)
 		
 		self.CONV_OUTPUT_SHAPE = utils.tens2shape(self.get_dummy_fmap()[self.CONV_OUTPUT])
 		
 		# FC Layers (convolution with kernel size equal to the entire feature map size is like a fc layer)
 		
-		self.fc9 = H.HebbianConv2d(
-			in_channels=self.CONV_OUTPUT_SHAPE[0],
-			out_channels=self.NUM_HIDDEN,
-			kernel_size=(self.CONV_OUTPUT_SHAPE[1], self.CONV_OUTPUT_SHAPE[2]),
-			lrn_sim=self.lrn_sim,
-			lrn_act=self.lrn_act,
-			lrn_cmp=True,
-			lrn_t=True,
-			out_sim=self.out_sim,
-			out_act=self.out_act,
-			competitive=H.Competitive(out_size=utils.get_factors(self.NUM_HIDDEN), competitive_act=self.competitive_act, k=self.K),
-			act_complement_init=self.ACT_COMPLEMENT_INIT,
-			act_complement_ratio=self.ACT_COMPLEMENT_RATIO,
-			act_complement_adapt=self.ACT_COMPLEMENT_ADAPT,
-			act_complement_grp=self.ACT_COMPLEMENT_GRP,
-			var_adaptive=self.VAR_ADAPTIVE,
-			gating=self.GATING,
-			upd_rule=self.UPD_RULE,
-			reconstruction=self.RECONSTR,
-			reduction=self.RED,
-			alpha_l=self.ALPHA_L,
-			alpha_g=self.ALPHA_G,
-		)  # conv_output_shape-shaped input, 64x64=self.NUM_HIDDEN output channels
-		self.bn9 = nn.BatchNorm2d(self.NUM_HIDDEN)  # Batch Norm layer
-		
-		self.fc10 = H.HebbianConv2d(
-			in_channels=self.NUM_HIDDEN,
-			out_channels=self.NUM_CLASSES,
-			kernel_size=1,
-			lrn_sim=HF.get_affine_sim(HF.raised_cos_sim2d, p=2),
-			lrn_act=HF.identity,
-			lrn_cmp=True,
-			lrn_t=True,
-			out_sim=HF.vector_proj2d if self.ALPHA_G == 0. else HF.kernel_mult2d,
-			out_act=HF.identity,
-			competitive=H.Competitive(),
-			gating=H.HebbianConv2d.GATE_BASE,
-			upd_rule=H.HebbianConv2d.UPD_RECONSTR if self.ALPHA_G == 0. else None,
-			reconstruction=H.HebbianConv2d.REC_QNT_SGN,
-			reduction=H.HebbianConv2d.RED_W_AVG,
-			alpha_l=self.ALPHA_L,
-			alpha_g=self.ALPHA_G if self.ALPHA_G == 0. else 1.,
-		)  # self.NUM_HIDDEN-dimensional input, NUM_CLASSES-dimensional output (one per class)
+		self.classifier = nn.Sequential(
+			H.HebbianConv2d(
+				in_channels=self.CONV_OUTPUT_SHAPE[0],
+				out_channels=self.NUM_HIDDEN,
+				kernel_size=(self.CONV_OUTPUT_SHAPE[1], self.CONV_OUTPUT_SHAPE[2]),
+				lrn_sim=self.lrn_sim,
+				lrn_act=self.lrn_act,
+				lrn_cmp=True,
+				lrn_t=True,
+				out_sim=self.out_sim,
+				out_act=self.out_act,
+				competitive=H.Competitive(out_size=utils.get_factors(self.NUM_HIDDEN), competitive_act=self.competitive_act, k=self.K),
+				act_complement_init=self.ACT_COMPLEMENT_INIT,
+				act_complement_ratio=self.ACT_COMPLEMENT_RATIO,
+				act_complement_adapt=self.ACT_COMPLEMENT_ADAPT,
+				act_complement_grp=self.ACT_COMPLEMENT_GRP,
+				var_adaptive=self.VAR_ADAPTIVE,
+				gating=self.GATING,
+				upd_rule=self.UPD_RULE,
+				reconstruction=self.RECONSTR,
+				reduction=self.RED,
+				alpha_l=self.ALPHA_L,
+				alpha_g=self.ALPHA_G,
+			),  # conv_output_shape-shaped input, 64x64=self.NUM_HIDDEN output channels
+			nn.BatchNorm2d(self.NUM_HIDDEN),  # Batch Norm layer
+			
+			H.HebbianConv2d(
+				in_channels=self.NUM_HIDDEN,
+				out_channels=self.NUM_CLASSES,
+				kernel_size=1,
+				lrn_sim=HF.get_affine_sim(HF.raised_cos_sim2d, p=2),
+				lrn_act=HF.identity,
+				lrn_cmp=True,
+				lrn_t=True,
+				out_sim=HF.vector_proj2d if self.ALPHA_G == 0. else HF.kernel_mult2d,
+				out_act=HF.identity,
+				competitive=H.Competitive(),
+				gating=H.HebbianConv2d.GATE_BASE,
+				upd_rule=H.HebbianConv2d.UPD_RECONSTR if self.ALPHA_G == 0. else None,
+				reconstruction=H.HebbianConv2d.REC_QNT_SGN,
+				reduction=H.HebbianConv2d.RED_W_AVG,
+				alpha_l=self.ALPHA_L,
+				alpha_g=self.ALPHA_G if self.ALPHA_G == 0. else 1.,
+			)  # self.NUM_HIDDEN-dimensional input, NUM_CLASSES-dimensional output (one per class)
+		)
 	
 	def get_conv_output(self, x):
-		# Layer 8: Convolutional + Batch Norm
-		conv8_out = self.conv8(x)
-		bn8_out = HF.modified_bn(self.bn8, conv8_out)
-		
-		# Build dictionary containing outputs of each layer
-		conv_out = {
-			self.CONV8: conv8_out,
-			self.BN8: bn8_out,
-		}
-		return conv_out
+		return {self.CONV_OUTPUT: self.features(x)}
 	
-	# Here we define the flow of information through the network
 	def forward(self, x):
-		# Compute the output feature map from the convolutional layers
 		out = self.get_conv_output(x)
+		class_scores = self.classifier(out[self.CONV_OUTPUT])
 		
-		# Layer 9: FC + Batch Norm
-		fc9_out = self.fc9(out[self.CONV_OUTPUT])
-		bn9_out = HF.modified_bn(self.bn9, fc9_out)
-		
-		# Linear FC layer, outputs are the class scores
-		fc10_out = self.fc10(bn9_out).view(-1, self.NUM_CLASSES)
-		
-		# Build dictionary containing outputs from convolutional and FC layers
-		out[self.FC9] = fc9_out
-		out[self.BN9] = bn9_out
-		out[self.FC10] = fc10_out
-		out[self.CLASS_SCORES] = {P.KEY_CLASS_SCORES: fc10_out}
+		out[self.CLASS_SCORES] = class_scores
 		return out
-	
-	def set_teacher_signal(self, y):
-		if isinstance(y, dict): y = y[P.KEY_LABEL_TARGETS]
-		if y is not None: y = utils.dense2onehot(y, self.NUM_CLASSES)
-		
-		self.fc10.set_teacher_signal(y)
-		if y is None:
-			self.conv8.set_teacher_signal(y)
-			self.fc9.set_teacher_signal(y)
-		elif self.DEEP_TEACHER_SIGNAL:
-			# Extend teacher signal for deep layers
-			l8_knl_per_class = 500 // self.NUM_CLASSES
-			l9_knl_per_class = self.NUM_HIDDEN // self.NUM_CLASSES
-			if self.NUM_CLASSES <= 20:
-				self.conv8.set_teacher_signal(
-					torch.cat((
-						torch.ones(y.size(0), self.conv8.weight.size(0) - l8_knl_per_class * self.NUM_CLASSES, device=y.device),
-						y.view(y.size(0), y.size(1), 1).repeat(1, 1, l8_knl_per_class).view(y.size(0), -1),
-					), dim=1)
-				)
-			self.fc9.set_teacher_signal(
-				torch.cat((
-					torch.ones(y.size(0), self.fc9.weight.size(0) - l9_knl_per_class * self.NUM_CLASSES, device=y.device),
-					y.view(y.size(0), y.size(1), 1).repeat(1, 1, l9_knl_per_class).view(y.size(0), -1),
-				), dim=1)
-			)
-
-	def local_updates(self):
-		self.conv8.local_update()
-		self.fc9.local_update()
-		self.fc10.local_update()
-
