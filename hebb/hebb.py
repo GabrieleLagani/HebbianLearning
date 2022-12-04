@@ -16,7 +16,7 @@ import params as P
 #   - Trisigma wta configs, spatial decorrelation, reconstruction + competition, cocoa, other reconstruction criteria,
 #       presynaptic gating, repulsive competition, backward feedback, hebbian rules from other losses, splitting nonlinearities,
 #       recurrent computation and lca, differentiable plasticity, competitive interaction in backward, competitive
-#       nonlinearity with identity backward
+#       nonlinearity with identity backward.
 #   - Reconstruction with bias, PCA with neurons with multiple different bias targets to achieve multiple splits --> can
 #       be done stacking multiple layers?
 #   - Clustering with gauss nonlinearity integrated with vector projection similarity using weight vector as mean
