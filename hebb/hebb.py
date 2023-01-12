@@ -1,7 +1,6 @@
 import torch
 import torch.nn as nn
 
-from neurolab import utils
 from .functional import *
 import params as P
 

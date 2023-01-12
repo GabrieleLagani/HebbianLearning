@@ -21,7 +21,7 @@ class Net(Model):
 	FC5 = 'fc5'
 	BN5 = 'bn5'
 	FC6 = 'fc6'
-	CLASS_SCORES = 'class_scores' # Name of the classification output providing the class scores
+	CLF_OUTPUT = 'clf_output' # Name of the classification output providing the class scores
 	
 	def __init__(self, config, input_shape=None):
 		super(Net, self).__init__(config, input_shape)
@@ -172,7 +172,7 @@ class Net(Model):
 			lrn_t=True,
 			out_sim=self.out_sim,
 			out_act=self.out_act,
-			competitive=H.Competitive(out_size=utils.get_factors(self.NUM_HIDDEN), competitive_act=self.competitive_act, k=self.K),
+			competitive=H.Competitive(out_size=HF.get_factors(self.NUM_HIDDEN), competitive_act=self.competitive_act, k=self.K),
 			act_complement_init=self.ACT_COMPLEMENT_INIT,
 			act_complement_ratio=self.ACT_COMPLEMENT_RATIO,
 			act_complement_adapt=self.ACT_COMPLEMENT_ADAPT,
@@ -242,7 +242,7 @@ class Net(Model):
 		out[self.FC5] = fc5_out
 		out[self.BN5] = bn5_out
 		out[self.FC6] = fc6_out
-		out[self.CLASS_SCORES] = {P.KEY_CLASS_SCORES: fc6_out}
+		out[self.CLF_OUTPUT] = {P.KEY_CLASS_SCORES: fc6_out}
 		return out
 	
 	def set_teacher_signal(self, y):

@@ -54,7 +54,7 @@ class Net(Model):
 	Z7 = 'z7'
 	Z8 = 'z8'
 	Z9 = 'z9'
-	CLASS_SCORES = 'class_scores' # Name of the classification output providing the class scores
+	CLF_OUTPUT = 'clf_output' # Name of the classification output providing the class scores
 	VAE_OUTPUT = 'vae_output' # Name for the vae output consisting of reconstruction and latent variables statistics
 	POOL_INDICES = 'pool_indices' # Name of the dictionary entry containing indices resulting from max pooling
 	
@@ -696,7 +696,7 @@ class Net(Model):
 		out[self.Z7] = z7
 		out[self.Z8] = z8
 		out[self.Z9] = z9
-		out[self.CLASS_SCORES] = {P.KEY_CLASS_SCORES: fc10_out}
+		out[self.CLF_OUTPUT] = {P.KEY_CLASS_SCORES: fc10_out}
 		return out
 	
 	def local_updates(self):

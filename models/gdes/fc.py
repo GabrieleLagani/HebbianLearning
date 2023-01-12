@@ -9,7 +9,7 @@ from neurolab.model import Model
 class Net(Model):
 	# Layer names
 	FC = 'fc'
-	CLASS_SCORES = 'class_scores' # Name of the classification output providing the class scores
+	CLF_OUTPUT = 'clf_output' # Name of the classification output providing the class scores
 	
 	def __init__(self, config, input_shape=None):
 		super(Net, self).__init__(config, input_shape)
@@ -29,5 +29,5 @@ class Net(Model):
 		fc_out = self.fc(F.dropout(x.view(-1, self.INPUT_SIZE), p=self.DROPOUT_P, training=self.training))
 		
 		out[self.FC] = fc_out
-		out[self.CLASS_SCORES] = {P.KEY_CLASS_SCORES: fc_out}
+		out[self.CLF_OUTPUT] = {P.KEY_CLASS_SCORES: fc_out}
 		return out

@@ -36,7 +36,7 @@ class Net(Model):
 	Z3 = 'z3'
 	Z4 = 'z4'
 	Z5 = 'z5'
-	CLASS_SCORES = 'class_scores' # Name of the classification output providing the class scores
+	CLF_OUTPUT = 'clf_output' # Name of the classification output providing the class scores
 	POOL_INDICES = 'pool_indices' # Name of the dictionary entry containing indices resulting from max pooling
 	
 	def __init__(self, config, input_shape=None):
@@ -412,7 +412,7 @@ class Net(Model):
 		out[self.RELU5] = relu5_out
 		out[self.BN5] = bn5_out
 		out[self.FC6] = fc6_out
-		out[self.CLASS_SCORES] = {P.KEY_CLASS_SCORES: fc6_out}
+		out[self.CLF_OUTPUT] = {P.KEY_CLASS_SCORES: fc6_out}
 		out[self.Z1] = z1
 		out[self.Z2] = z2
 		out[self.Z3] = z3

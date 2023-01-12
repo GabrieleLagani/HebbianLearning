@@ -2,6 +2,8 @@ from neurolab import params as P
 
 # TODO: Add convergence to target performance value(s).
 # TODO: Add plots of weight norms, weight change norms, stopping condition when weights stop changing, elastic weight loss.
+# TODO: Make neurolab models more easily usable also outside of neurolab with wrappers over ordinary pytorch modules.
+# TODO: Add automatic input layer selection and automatic generation of layers.
 # TODO: Write documentation, add checks on user provided parameters, print exception in try-except-pass blocks, publish pip package.
 # TODO: (as needed)
 #  Add adversarial examples.

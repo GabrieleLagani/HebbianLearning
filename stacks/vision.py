@@ -26,7 +26,7 @@ smpleff_sk_hebb = {lrn_rule + '_' + ds + da_names[da]: [] for lrn_rule in lrn_ru
 smpleff_sk_vae = {ds + da_names[da]: [] for ds in datasets for da in da_strategies}
 all = {ds + da_names[da]: [] for ds in datasets for da in da_strategies}
 
-vgg = {lrn_rule + '_' + ds + da_names[da]: [] for lrn_rule in lrn_rules for ds in datasets for da in da_strategies}
+vgg = {lrn_rule + '_' + ds + da_names[da]: [] for lrn_rule in lrn_rules + ['none'] for ds in datasets for da in da_strategies}
 
 hebbreg = {ds + da_names[da]: [] for ds in datasets for da in da_strategies}
 hebbreg_sk = {ds + da_names[da]: [] for ds in datasets for da in da_strategies}
@@ -169,7 +169,14 @@ for ds in datasets:
 			vgg[lrn_rule + '_' + ds + da_names[da]] += [{P.KEY_STACK_CONFIG: 'configs.vision.smpleff.smpleff_gdes_fc_on_hebb_vgg_ft[' + lrn_rule + '_' + ds + '_' + str(n) + da_names[da] + ']', P.KEY_STACK_SEEDS: SEEDS2, P.KEY_STACK_TOKENS: [str(i) for i in SEEDS1], P.KEY_STACK_DATASEEDS: DATASEEDS} for n in smpleff_regimes[ds]]
 			#vgg[lrn_rule + '_' + ds + da_names[da]] += [{P.KEY_STACK_CONFIG: 'configs.vision.smpleff.smpleff_gdes_fc2_on_hebb_vgg_ft[' + lrn_rule + '_' + ds + '_' + str(n) + da_names[da] + ']', P.KEY_STACK_SEEDS: SEEDS2, P.KEY_STACK_TOKENS: [str(i) for i in SEEDS1], P.KEY_STACK_DATASEEDS: DATASEEDS} for n in smpleff_regimes[ds]]
 			vgg[lrn_rule + '_' + ds + da_names[da]] += [{P.KEY_STACK_CONFIG: 'configs.vision.smpleff.smpleff_prec_on_hebb_vgg_ft[' + lrn_rule + '_' + ds + '_' + str(n) + da_names[da] + ']', P.KEY_STACK_SEEDS: SEEDS3, P.KEY_STACK_TOKENS: [str(i) for i in SEEDS2], P.KEY_STACK_DATASEEDS: DATASEEDS} for n in smpleff_regimes[ds]]
-			
+		vgg['none' + '_' + ds + da_names[da]] += [{P.KEY_STACK_CONFIG: 'configs.vision.vgg.gdes_fc_on_hebb_vgg_ft[' + 'none' + '_' + ds + da_names[da] + ']', P.KEY_STACK_SEEDS: SEEDS2, P.KEY_STACK_TOKENS: [str(i) for i in SEEDS1], P.KEY_STACK_DATASEEDS: DATASEEDS}]
+		#vgg['none' + '_' + ds + da_names[da]] += [{P.KEY_STACK_CONFIG: 'configs.vision.vgg.gdes_fc2_on_hebb_vgg_ft[' + 'none' + '_' + ds + da_names[da] + ']', P.KEY_STACK_SEEDS: SEEDS2, P.KEY_STACK_TOKENS: [str(i) for i in SEEDS1], P.KEY_STACK_DATASEEDS: DATASEEDS}]
+		vgg['none' + '_' + ds + da_names[da]] += [{P.KEY_STACK_CONFIG: 'configs.vision.vgg.prec_on_hebb_vgg_ft[' + 'none' + '_' + ds + da_names[da] + ']', P.KEY_STACK_SEEDS: SEEDS3, P.KEY_STACK_TOKENS: [str(i) for i in SEEDS2], P.KEY_STACK_DATASEEDS: DATASEEDS}]
+		vgg['none' + '_' + ds + da_names[da]] += [{P.KEY_STACK_CONFIG: 'configs.vision.smpleff.smpleff_gdes_fc_on_hebb_vgg_ft[' + 'none' + '_' + ds + '_' + str(n) + da_names[da] + ']', P.KEY_STACK_SEEDS: SEEDS2, P.KEY_STACK_TOKENS: [str(i) for i in SEEDS1], P.KEY_STACK_DATASEEDS: DATASEEDS} for n in smpleff_regimes[ds]]
+		#vgg['none' + '_' + ds + da_names[da]] += [{P.KEY_STACK_CONFIG: 'configs.vision.smpleff.smpleff_gdes_fc2_on_hebb_vgg_ft[' + 'none' + '_' + ds + '_' + str(n) + da_names[da] + ']', P.KEY_STACK_SEEDS: SEEDS2, P.KEY_STACK_TOKENS: [str(i) for i in SEEDS1], P.KEY_STACK_DATASEEDS: DATASEEDS} for n in smpleff_regimes[ds]]
+		vgg['none' + '_' + ds + da_names[da]] += [{P.KEY_STACK_CONFIG: 'configs.vision.smpleff.smpleff_prec_on_hebb_vgg_ft[' + 'none' + '_' + ds + '_' + str(n) + da_names[da] + ']', P.KEY_STACK_SEEDS: SEEDS3, P.KEY_STACK_TOKENS: [str(i) for i in SEEDS2], P.KEY_STACK_DATASEEDS: DATASEEDS} for n in smpleff_regimes[ds]]
+		
+		
 		#for lrn_rule in lrn_rules: hebbreg[ds + da_names[da]] += [{P.KEY_STACK_CONFIG: 'configs.vision.hebbreg.config_hebbreg[' + lrn_rule + '_a' + str(a) + '_' + ds + da_names[da] + ']', P.KEY_STACK_SEEDS: SEEDS1, P.KEY_STACK_DATASEEDS: DATASEEDS} for a in hebbreg_coeffs if a != 0. or lrn_rule == lrn_rules[0]]
 		#for lrn_rule in lrn_rules: hebbreg_sk[ds + da_names[da]] += [{P.KEY_STACK_CONFIG: 'configs.vision.hebbreg.prec_on_hebbreg[' + lrn_rule + '_a' + str(a) + '_' + ds + da_names[da] + ']', P.KEY_STACK_SEEDS: SEEDS2, P.KEY_STACK_TOKENS: [str(i) for i in SEEDS1], P.KEY_STACK_DATASEEDS: DATASEEDS} for a in hebbreg_coeffs if a != 0. or lrn_rule == lrn_rules[0]]
 		#vaereg[ds + da_names[da]] += [{P.KEY_STACK_CONFIG: 'configs.vision.hebbreg.config_vaereg[a' + str(a) + '_' + ds + da_names[da] + ']', P.KEY_STACK_SEEDS: SEEDS1, P.KEY_STACK_DATASEEDS: DATASEEDS} for a in hebbreg_coeffs if a != 0. or lrn_rule == lrn_rules[0]]

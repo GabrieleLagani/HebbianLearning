@@ -2,6 +2,7 @@ HEBB_UPD_GRP = 128 # In the Hebbian module, how many kernels to update in parall
 HEBB_FASTHEBB = True # Whether to use fast hebbian update computation based on matmul
 HEBB_REORDMULT = True # Whether to use multiplication reordering with early batch-wise aggregation
 KEY_VAE_NUM_LATENT_VARS = 'vae_num_latent_vars'
+KEY_VGG_MODEL = 'vgg_model'
 KEY_COMPETITIVE_ACT = 'competitive_act'
 KEY_COMPETITIVE_K = 'competitive_k'
 KEY_ACT_COMPLEMENT_INIT = 'act_complement_init'

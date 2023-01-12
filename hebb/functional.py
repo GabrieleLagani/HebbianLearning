@@ -3,7 +3,18 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from neurolab import utils
+
+# Convert tensor shape to total tensor size
+def shape2size(shape):
+	size = 1
+	for s in shape: size *= s
+	return size
+
+# Decomposes number into two integer factors as close as possible
+def get_factors(n):
+	i = int(n**0.5 + 0.5) # Fudged to deal with float root precision errors
+	while n % i != 0: i -= 1
+	return i, n // i
 
 
 # Euclidean distance between vectors
@@ -13,7 +24,7 @@ def dist(x, y):
 
 # Standard weight initialization method, default used in pytorch conv modules (the one from the paper "Efficient Backprop, LeCun")
 def weight_init_std(w):
-	stdv = 1 / (utils.shape2size(w[0].size())) ** 0.5
+	stdv = 1 / (shape2size(w[0].size())) ** 0.5
 	torch.nn.init.uniform_(w, -stdv, stdv)
 	return w
 
@@ -110,7 +121,7 @@ def raised_cos_sim2d(x, w, bias=None):
 	return s.pow(b)
 # Corresponding normalization condition functions for heuristic variance determination
 def nc_raised_cos_sim(w):
-	return 1/(-math.log( (1 + torch.cos( 1 / (w.size(0) ** (1 / (utils.shape2size(tuple(w[0].size()))))) )) / 2 ))
+	return 1/(-math.log( (1 + torch.cos( 1 / (w.size(0) ** (1 / (shape2size(tuple(w[0].size()))))) )) / 2 ))
 
 # Angular similarity remapped to 0, 1
 def raised_ang_sim2d(x, w, bias=None):
@@ -124,7 +135,7 @@ def raised_ang_sim2d(x, w, bias=None):
 	return s.pow(b)
 # Corresponding normalization condition functions for heuristic variance determination
 def nc_raised_ang_sim(w):
-	return 1/(-math.log( 1 - 1 / (w.size(0) ** (1 / (utils.shape2size(tuple(w[0].size()))))) ))
+	return 1/(-math.log( 1 - 1 / (w.size(0) ** (1 / (shape2size(tuple(w[0].size()))))) ))
 
 # Get exponential similarity function e^(-f^p/var)
 def get_exp_sim(f, nc=None):
@@ -151,7 +162,7 @@ def dist_ang(x, w): # Angular distance
 	return torch.acos(cos_sim)/math.pi
 # Normalization condition functions for heuristic variance determination
 def nc_base(w):
-	return w.size(0) ** (1 / (utils.shape2size(tuple(w[0].size()))))
+	return w.size(0) ** (1 / (shape2size(tuple(w[0].size()))))
 def nc_max_dist(w):
 	return nc_base(w) / dist(w.view(w.size(0), -1), w.view(w.size(0), -1)).max().detach().item()
 def nc_cos_dist(w):
@@ -271,6 +282,15 @@ def modified_bn(bn_layer, input):
 	out = bn_layer(input)
 	out *= ((bn_layer.running_var.view(*shape) + bn_layer.eps)/(bn_layer.running_var.mean() + bn_layer.eps))**0.5
 	return out
+
+# A callable object equivalent to modified_bn
+class ModifiedBN(nn.Module):
+	def __init__(self, bn_layer):
+		super(ModifiedBN, self).__init__()
+		self.bn_layer = bn_layer
+	
+	def forward(self, input):
+		return modified_bn(self.bn_layer, input)
 
 
 # A custom module that takes a constant and transforms it into a parameter that is function of other parameters,

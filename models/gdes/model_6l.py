@@ -30,7 +30,7 @@ class Net(Model):
 	RELU5 = 'relu5'
 	BN5 = 'bn5'
 	FC6 = 'fc6'
-	CLASS_SCORES = 'class_scores' # Name of the classification output providing the class scores
+	CLF_OUTPUT = 'clf_output' # Name of the classification output providing the class scores
 	
 	def __init__(self, config, input_shape=None):
 		super(Net, self).__init__(config, input_shape)
@@ -125,5 +125,5 @@ class Net(Model):
 		out[self.RELU5] = relu5_out
 		out[self.BN5] = bn5_out
 		out[self.FC6] = fc6_out
-		out[self.CLASS_SCORES] = {P.KEY_CLASS_SCORES: fc6_out}
+		out[self.CLF_OUTPUT] = {P.KEY_CLASS_SCORES: fc6_out}
 		return out

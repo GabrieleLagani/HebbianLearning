@@ -17,16 +17,18 @@ layer_seq = {
 	'VGG19': [64, 64, 'M', 128, 128, 'M', 256, 256, 256, 256, 'M', 512, 512, 512, 512, 'M', 512, 512, 512, 512, 'M'],
 }
 
+use_modified_bn_dict = {'VGG11': 8, 'VGG13': 10, 'VGG16': 12, 'VGG19': 14}
 
 class Net(Model):
 	# Layer names
 	CONV_OUTPUT = 'conv_output'
-	CLASS_SCORES = 'class_scores'
+	CLF = 'clf'
+	CLF_OUTPUT = 'clf_output'
 	
 	def __init__(self, config, input_shape=None):
 		super(Net, self).__init__(config, input_shape)
 		
-		self.VGG_NAME = 'VGG11'
+		self.VGG_MODEL = config.CONFIG_OPTIONS.get(PP.KEY_VGG_MODEL, 'VGG11')
 		self.NUM_CLASSES = P.GLB_PARAMS[P.KEY_DATASET_METADATA][P.KEY_DS_NUM_CLASSES]
 		self.NUM_HIDDEN = config.CONFIG_OPTIONS.get(PP.KEY_NUM_HIDDEN, 4096)
 		self.DEEP_TEACHER_SIGNAL = config.CONFIG_OPTIONS.get(P.KEY_DEEP_TEACHER_SIGNAL, False)
@@ -110,37 +112,42 @@ class Net(Model):
 		
 		layers = []
 		in_channels = 3
-		for x in layer_seq[self.VGG_NAME]:
-			if x == 'M':
+		for i, l in enumerate(layer_seq[self.VGG_MODEL]):
+			if l == 'M':
 				layers += [nn.MaxPool2d(kernel_size=2, stride=2)]
 			else:
-				layers += [nn.ZeroPad2d(padding=1)]
-				layers += [H.HebbianConv2d(
-					in_channels=in_channels,
-					out_channels=x,
-					kernel_size=3,
-					lrn_sim=self.lrn_sim,
-					lrn_act=self.lrn_act,
-					lrn_cmp=True,
-					lrn_t=True,
-					out_sim=self.out_sim,
-					out_act=self.out_act,
-					competitive=H.Competitive(out_size=utils.get_factors(x), competitive_act=self.competitive_act, k=self.K),
-					act_complement_init=self.ACT_COMPLEMENT_INIT,
-					act_complement_ratio=self.ACT_COMPLEMENT_RATIO,
-					act_complement_adapt=self.ACT_COMPLEMENT_ADAPT,
-					act_complement_grp=self.ACT_COMPLEMENT_GRP,
-					var_adaptive=self.VAR_ADAPTIVE,
-					gating=self.GATING,
-					upd_rule=self.UPD_RULE,
-					reconstruction=self.RECONSTR,
-					reduction=self.RED,
-					alpha_l=self.ALPHA_L,
-					alpha_g=self.ALPHA_G,
-				)]
-				
-				layers += [nn.ReLU(inplace=True), nn.BatchNorm2d(x)]
-				in_channels = x
+				layers += [
+					nn.ZeroPad2d(padding=1),
+					H.HebbianConv2d(
+						in_channels=in_channels,
+						out_channels=l,
+						kernel_size=3,
+						lrn_sim=self.lrn_sim,
+						lrn_act=self.lrn_act,
+						lrn_cmp=True,
+						lrn_t=True,
+						out_sim=self.out_sim,
+						out_act=self.out_act,
+						competitive=H.Competitive(out_size=HF.get_factors(l), competitive_act=self.competitive_act, k=self.K),
+						act_complement_init=self.ACT_COMPLEMENT_INIT,
+						act_complement_ratio=self.ACT_COMPLEMENT_RATIO,
+						act_complement_adapt=self.ACT_COMPLEMENT_ADAPT,
+						act_complement_grp=self.ACT_COMPLEMENT_GRP,
+						var_adaptive=self.VAR_ADAPTIVE,
+						gating=self.GATING,
+						upd_rule=self.UPD_RULE,
+						reconstruction=self.RECONSTR,
+						reduction=self.RED,
+						alpha_l=self.ALPHA_L,
+						alpha_g=self.ALPHA_G,
+					),
+					nn.ReLU(inplace=True)
+				]
+				in_channels = l
+			
+			if i == len(layer_seq[self.VGG_MODEL]) - 1 or layer_seq[self.VGG_MODEL][i + 1] != 'M':
+				use_modified_bn = i > use_modified_bn_dict[self.VGG_MODEL]
+				layers += [HF.ModifiedBN(nn.BatchNorm2d(in_channels)) if use_modified_bn else nn.BatchNorm2d(in_channels)]
 		
 		self.features = nn.Sequential(*layers)
 		
@@ -159,7 +166,7 @@ class Net(Model):
 				lrn_t=True,
 				out_sim=self.out_sim,
 				out_act=self.out_act,
-				competitive=H.Competitive(out_size=utils.get_factors(self.NUM_HIDDEN), competitive_act=self.competitive_act, k=self.K),
+				competitive=H.Competitive(out_size=HF.get_factors(self.NUM_HIDDEN), competitive_act=self.competitive_act, k=self.K),
 				act_complement_init=self.ACT_COMPLEMENT_INIT,
 				act_complement_ratio=self.ACT_COMPLEMENT_RATIO,
 				act_complement_adapt=self.ACT_COMPLEMENT_ADAPT,
@@ -172,7 +179,7 @@ class Net(Model):
 				alpha_l=self.ALPHA_L,
 				alpha_g=self.ALPHA_G,
 			),  # conv_output_shape-shaped input, 64x64=self.NUM_HIDDEN output channels
-			nn.BatchNorm2d(self.NUM_HIDDEN),  # Batch Norm layer
+			HF.ModifiedBN(nn.BatchNorm2d(self.NUM_HIDDEN)),  # Batch Norm layer
 			
 			H.HebbianConv2d(
 				in_channels=self.NUM_HIDDEN,
@@ -199,7 +206,21 @@ class Net(Model):
 	
 	def forward(self, x):
 		out = self.get_conv_output(x)
-		class_scores = self.classifier(out[self.CONV_OUTPUT])
+		class_scores = self.classifier(out[self.CONV_OUTPUT]).view(-1, self.NUM_CLASSES)
 		
-		out[self.CLASS_SCORES] = class_scores
+		out[self.CLF] = class_scores
+		out[self.CLF_OUTPUT] = {P.KEY_CLASS_SCORES: class_scores}
 		return out
+	
+	def set_teacher_signal(self, y):
+		if isinstance(y, dict): y = y[P.KEY_LABEL_TARGETS]
+		if y is not None: y = utils.dense2onehot(y, self.NUM_CLASSES)
+		
+		self.classifier[-1].set_teacher_signal(y)
+
+	def local_updates(self):
+		for l in self.features:
+			if hasattr(l, "local_update"): l.local_update()
+		for l in self.classifier:
+			if hasattr(l, "local_update"): l.local_update()
+

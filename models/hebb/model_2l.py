@@ -16,7 +16,7 @@ class Net(Model):
 	BN1 = 'bn1'
 	CONV_OUTPUT = BN1  # Symbolic name for the last convolutional layer providing extracted features
 	FC2 = 'fc2'
-	CLASS_SCORES = 'class_scores' # Name of the classification output providing the class scores
+	CLF_OUTPUT = 'clf_output' # Name of the classification output providing the class scores
 	
 	def __init__(self, config, input_shape=None):
 		super(Net, self).__init__(config, input_shape)
@@ -173,7 +173,7 @@ class Net(Model):
 		
 		# Build dictionary containing outputs from convolutional and FC layers
 		out[self.FC2] = fc2_out
-		out[self.CLASS_SCORES] = {P.KEY_CLASS_SCORES: fc2_out}
+		out[self.CLF_OUTPUT] = {P.KEY_CLASS_SCORES: fc2_out}
 		return out
 	
 	def set_teacher_signal(self, y):
