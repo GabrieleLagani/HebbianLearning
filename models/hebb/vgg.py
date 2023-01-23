@@ -17,8 +17,6 @@ layer_seq = {
 	'VGG19': [64, 64, 'M', 128, 128, 'M', 256, 256, 256, 256, 'M', 512, 512, 512, 512, 'M', 512, 512, 512, 512, 'M'],
 }
 
-use_modified_bn_dict = {'VGG11': 8, 'VGG13': 10, 'VGG16': 12, 'VGG19': 14}
-
 class Net(Model):
 	# Layer names
 	CONV_OUTPUT = 'conv_output'
@@ -141,13 +139,11 @@ class Net(Model):
 						alpha_l=self.ALPHA_L,
 						alpha_g=self.ALPHA_G,
 					),
+					nn.BatchNorm2d(l),
 					nn.ReLU(inplace=True)
 				]
 				in_channels = l
 			
-			if i == len(layer_seq[self.VGG_MODEL]) - 1 or layer_seq[self.VGG_MODEL][i + 1] != 'M':
-				use_modified_bn = i > use_modified_bn_dict[self.VGG_MODEL]
-				layers += [HF.ModifiedBN(nn.BatchNorm2d(in_channels)) if use_modified_bn else nn.BatchNorm2d(in_channels)]
 		
 		self.features = nn.Sequential(*layers)
 		

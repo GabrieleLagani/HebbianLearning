@@ -11,16 +11,11 @@ import params as P
 #       batch wise. Same also for other adaptive params. Possibility to normalize with average of variances rather than
 #       each feature with its own variance. Possibility to normalize with heuristics based on weights.
 #   - Add deferred update flag and local optimization inside module. Merged updates for all the adaptive parameters.
-#   - Post nonlinear demixer ica, Mix ica and pca, ica kappa parameter adapted by infomax.
-#   - Trisigma wta configs, spatial decorrelation, reconstruction + competition, cocoa, other reconstruction criteria,
-#       presynaptic gating, repulsive competition, backward feedback, hebbian rules from other losses, splitting nonlinearities,
-#       recurrent computation and lca, differentiable plasticity, competitive interaction in backward, competitive
-#       nonlinearity with identity backward
-#   - Reconstruction with bias, PCA with neurons with multiple different bias targets to achieve multiple splits --> can
-#       be done stacking multiple layers?
+#   - Post nonlinear demixer ica, mix ica and pca, reconstruction with bias.
 #   - Clustering with gauss nonlinearity integrated with vector projection similarity using weight vector as mean
 #       encoding and bias for variance, so that it is possible to find aligned clusters with dot product-based similarity.
 #   - Consider removing border artifacts due to possible padding
+#   - Other hebbian approaches
 
 
 # A generalized normalization layer
