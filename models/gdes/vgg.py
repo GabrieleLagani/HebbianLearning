@@ -4,9 +4,6 @@ import torch.nn.functional as F
 
 from neurolab import params as P
 from neurolab.model import SimpleWrapper
-import hebb as H
-from hebb import functional as HF
-from .base import HebbFactory
 import utils
 import params as PP
 
@@ -18,11 +15,8 @@ class Net(SimpleWrapper):
 		self.DROPOUT_P = config.CONFIG_OPTIONS.get(P.KEY_DROPOUT_P, 0.5)
 		self.VGG_MODEL = config.CONFIG_OPTIONS.get(PP.KEY_VGG_MODEL, 'VGG11')
 		
-		return Model(input_shape=input_shape, num_classes=self.NUM_CLASSES, num_hidden=self.NUM_HIDDEN, dropout_p=self.DROPOUT_P, vgg_model=self.VGG_MODEL, hebb_param_dict=config.CONFIG_OPTIONS)
-
-	def set_teacher_signal(self, y):
-		if y is not None: y = utils.dense2onehot(y, self.NUM_CLASSES)
-		super().set_teacher_signal(y)
+		return Model(input_shape=input_shape, num_classes=self.NUM_CLASSES, num_hidden=self.NUM_HIDDEN, dropout_p=self.DROPOUT_P, vgg_model=self.VGG_MODEL)
+	
 
 layer_seq = {
 	'VGG11': [64, 'M', 128, 'M', 256, 256, 'M', 512, 512, 'M', 512, 512, 'M'],
@@ -37,7 +31,7 @@ class Model(nn.Module):
 	CLF = 'clf'
 	CLF_OUTPUT = 'clf_output'
 	
-	def __init__(self, input_shape=None, num_classes=1000, num_hidden=4096, dropout_p=0., vgg_model='VGG11', hebb_param_dict=None):
+	def __init__(self, input_shape=None, num_classes=1000, num_hidden=4096, dropout_p=0., vgg_model='VGG11'):
 		super().__init__()
 		
 		self.INPUT_SHAPE = input_shape
@@ -45,8 +39,6 @@ class Model(nn.Module):
 		self.NUM_HIDDEN = num_hidden
 		self.DROPOUT_P = dropout_p
 		self.VGG_MODEL = vgg_model
-		self.HEBB_PARAM_DICT = hebb_param_dict
-		self.hfactory = HebbFactory(hebb_param_dict)
 		
 		# Here we define the layers of our network
 		
@@ -59,8 +51,9 @@ class Model(nn.Module):
 				# Deep convolutional layer: # in_channels input channels, l output channels, 3x3 convolutions
 				layers += [
 					nn.ZeroPad2d(padding=1), # Padding before convolution
-					self.hfactory.create_hebb_layer(in_channels=in_channels, out_channels=l, kernel_size=3), # Convolutional layer
+					nn.Conv2d(in_channels=in_channels, out_channels=l, kernel_size=3), # Convolutional layer
 					nn.BatchNorm2d(l), # Batch Norm layer
+					nn.ReLU(inplace=True) # ReLU nonlinearity
 				]
 				in_channels = l
 		
@@ -68,16 +61,19 @@ class Model(nn.Module):
 		
 		self.CONV_OUTPUT_SHAPE = None
 		self.CONV_OUTPUT_SHAPE = utils.get_output_fmap_shape(self, input_shape)[self.CONV_OUTPUT]
+		self.CONV_OUTPUT_SIZE = utils.shape2size(self.CONV_OUTPUT_SHAPE)
 		
 		# FC Layers (convolution with kernel size equal to the entire feature map size is like a fc layer)
 		
 		self.classifier = nn.Sequential(
 			# Deep FC layer: self.CONV_OUTPUT_SHAPE-shaped input, self.NUM_HIDDEN output channels
-			self.hfactory.create_hebb_layer(in_channels=self.CONV_OUTPUT_SHAPE[0], out_channels=self.NUM_HIDDEN, kernel_size=(self.CONV_OUTPUT_SHAPE[1], self.CONV_OUTPUT_SHAPE[2])),
-			HF.ModifiedBN(nn.BatchNorm2d(self.NUM_HIDDEN)),  # Batch Norm layer
+			nn.Linear(in_features=self.CONV_OUTPUT_SIZE, out_features=self.NUM_HIDDEN),
+			nn.BatchNorm2d(self.NUM_HIDDEN),  # Batch Norm layer
+			nn.ReLU(inplace=True), # ReLU nonlinearity
+			nn.Dropout(p=self.DROPOUT_P), # Dropout layer
 			
 			# Final FC layer: self.NUM_HIDDEN-dimensional input, self.NUM_CLASSES-dimensional output (one per class)
-			self.hfactory.create_hebb_layer(final=True, in_channels=self.NUM_HIDDEN, out_channels=self.NUM_CLASSES, kernel_size=1, teacher_distrib=1),
+			nn.Linear(in_features=self.NUM_HIDDEN, out_features=self.NUM_CLASSES),
 		)
 	
 	def get_conv_output(self, x):
@@ -88,7 +84,7 @@ class Model(nn.Module):
 		
 		if self.CONV_OUTPUT_SHAPE is None: return out
 		
-		class_scores = self.classifier(out[self.CONV_OUTPUT]).view(-1, self.NUM_CLASSES)
+		class_scores = self.classifier(out[self.CONV_OUTPUT].view(-1, self.CONV_OUTPUT_SIZE))
 		
 		out[self.CLF] = class_scores
 		out[self.CLF_OUTPUT] = {P.KEY_CLASS_SCORES: class_scores}

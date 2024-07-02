@@ -28,12 +28,12 @@ input_shapes = {'mnist': (3, 32, 32), 'cifar10': (3, 32, 32), 'cifar100': (3, 32
 batch_sizes = {'mnist': 64, 'cifar10': 64, 'cifar100': 64, 'tinyimagenet': 64, 'imagenet': 32}
 num_layers = {'mnist': 6, 'cifar10': 6, 'cifar100': 6, 'tinyimagenet': 6, 'imagenet': 10}
 net_outputs = {'mnist': 'fc6', 'cifar10': 'fc6', 'cifar100': 'fc6', 'tinyimagenet': 'fc6', 'imagenet': 'fc10'}
-hebb_lrn_rates = {'hpca': {'mnist': 1e-3, 'cifar10': 1e-3, 'cifar100': 1e-3, 'tinyimagenet': 1e-3, 'imagenet': 1e-4},
-                  'hpcat': {'mnist': 1e-3, 'cifar10': 1e-3, 'cifar100': 1e-3, 'tinyimagenet': 1e-3, 'imagenet': 1e-4},
-                  'hpcat_ada': {'mnist': 1e-3, 'cifar10': 1e-3, 'cifar100': 1e-3, 'tinyimagenet': 1e-3, 'imagenet': 1e-4},
-                  'ica': {'mnist': 1e-3, 'cifar10': 1e-3, 'cifar100': 1e-3, 'tinyimagenet': 1e-3, 'imagenet': 1e-4},
-                  'ica_nrm': {'mnist': 1e-3, 'cifar10': 1e-3, 'cifar100': 1e-3, 'tinyimagenet': 1e-3, 'imagenet': 1e-4},
-                  'hwta': {'mnist': 1e-3, 'cifar10': 1e-3, 'cifar100': 1e-3, 'tinyimagenet': 1e-3, 'imagenet': 1e-3}}
+hebb_lrn_rates = {'hpca': {'mnist': 1e-2, 'cifar10': 1e-2, 'cifar100': 1e-2, 'tinyimagenet': 1e-2, 'imagenet': 1e-3},
+                  'hpcat': {'mnist': 1e-2, 'cifar10': 1e-2, 'cifar100': 1e-2, 'tinyimagenet': 1e-2, 'imagenet': 1e-3},
+                  'hpcat_ada': {'mnist': 1e-2, 'cifar10': 1e-2, 'cifar100': 1e-2, 'tinyimagenet': 1e-2, 'imagenet': 1e-3},
+                  'ica': {'mnist': 1e-2, 'cifar10': 1e-2, 'cifar100': 1e-2, 'tinyimagenet': 1e-2, 'imagenet': 1e-3},
+                  'ica_nrm': {'mnist': 1e-2, 'cifar10': 1e-2, 'cifar100': 1e-2, 'tinyimagenet': 1e-2, 'imagenet': 1e-3},
+                  'hwta': {'mnist': 1e-2, 'cifar10': 1e-2, 'cifar100': 1e-2, 'tinyimagenet': 1e-2, 'imagenet': 1e-3}}
 l2_penalties = {'mnist': 5e-2, 'mnist_lda': 2.5e-2, 'mnist_hda': 2.5e-2,
                 'cifar10': 5e-2, 'cifar10_lda': 2.5e-2, 'cifar10_hda': 2.5e-2,
                 'cifar100': 1e-2, 'cifar100_lda': 5e-3, 'cifar100_hda': 5e-3,

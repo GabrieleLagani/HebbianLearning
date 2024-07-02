@@ -4,6 +4,7 @@ import requests
 import time
 import csv
 import random
+
 import matplotlib
 matplotlib.use('Agg')
 from matplotlib import pyplot as plt
@@ -29,7 +30,7 @@ def shape2size(shape):
 
 # Convert (dictionary of) tensors to (dictionary of) corresponding shapes
 def tens2shape(input):
-	return {k: tuple(input[k].size())[1:] if isinstance(input[k], torch.Tensor) else input[k] for k in input.keys()} if isinstance(input, dict) else tuple(input.size())[1:]
+	return {k: tens2shape(input[k]) for k in input} if isinstance(input, dict) else tuple(input.size())[1:]
 
 # Convert dense-encoded vector to one-hot encoded
 def dense2onehot(tensor, n):

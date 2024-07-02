@@ -2,11 +2,20 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 from neurolab import params as P
-from neurolab import utils
-from neurolab.model import Model
+from neurolab.model import SimpleWrapper
+
+import utils
 
 
-class Net(Model):
+class Net(SimpleWrapper):
+	def wrapped_init(self, config, input_shape=None):
+		self.NUM_CLASSES = P.GLB_PARAMS[P.KEY_DATASET_METADATA][P.KEY_DS_NUM_CLASSES]
+		self.DROPOUT_P = config.CONFIG_OPTIONS.get(P.KEY_DROPOUT_P, 0.5)
+		
+		return Model(input_shape=input_shape, num_classes=self.NUM_CLASSES, dropout_p=self.DROPOUT_P)
+	
+	
+class Model(nn.Module):
 	# Layer names
 	CONV1 = 'conv1'
 	RELU1 = 'relu1'
@@ -17,11 +26,12 @@ class Net(Model):
 	FC2 = 'fc2'
 	CLF_OUTPUT = 'clf_output' # Name of the classification output providing the class scores
 	
-	def __init__(self, config, input_shape=None):
-		super(Net, self).__init__(config, input_shape)
+	def __init__(self, input_shape, num_classes=10, dropout_p=0.):
+		super().__init__()
 		
-		self.NUM_CLASSES = P.GLB_PARAMS[P.KEY_DATASET_METADATA][P.KEY_DS_NUM_CLASSES]
-		self.DROPOUT_P = config.CONFIG_OPTIONS.get(P.KEY_DROPOUT_P, 0.5)
+		self.INPUT_SHAPE = input_shape
+		self.NUM_CLASSES = num_classes
+		self.DROPOUT_P = dropout_p
 		
 		# Here we define the layers of our network
 		
@@ -29,7 +39,8 @@ class Net(Model):
 		self.conv1 = nn.Conv2d(3, 96, 5) # 3 input channels, 96 output channels, 5x5 convolutions
 		self.bn1 = nn.BatchNorm2d(96) # Batch Norm layer
 		
-		self.CONV_OUTPUT_SIZE = utils.shape2size(utils.tens2shape(self.get_dummy_fmap()[self.CONV_OUTPUT]))
+		self.CONV_OUTPUT_SIZE = None
+		self.CONV_OUTPUT_SIZE = utils.shape2size(utils.get_output_fmap_shape(self, input_shape)[self.CONV_OUTPUT])
 		
 		# FC Layers
 		self.fc2 = nn.Linear(self.CONV_OUTPUT_SIZE, self.NUM_CLASSES) # conv_output_shape-dimensional input, 10-dimensional output (one per class)
@@ -54,6 +65,8 @@ class Net(Model):
 	def forward(self, x):
 		# Compute the output feature map from the convolutional layers
 		out = self.get_conv_output(x)
+		
+		if self.CONV_OUTPUT_SIZE is None: return out
 		
 		# Stretch out the feature map before feeding it to the FC layers
 		flat = out[self.CONV_OUTPUT].view(-1, self.CONV_OUTPUT_SIZE)

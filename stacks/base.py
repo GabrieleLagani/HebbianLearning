@@ -1,19 +1,20 @@
 from neurolab import params as P
 
 # TODO: Add convergence to target performance value(s).
-# TODO: Add plots of weight norms, weight change norms, stopping condition when weights stop changing, elastic weight loss.
-# TODO: Make neurolab models more easily usable also outside of neurolab with wrappers over ordinary pytorch modules.
-# TODO: Add automatic input layer selection and automatic generation of layers.
+# TODO: Add plots of weight norms, weight change norms, stopping condition when weights stop changing, elastic weight loss. Add tensorboard.
+# TODO: Patch-wise ZCA might present artifacts at patches borders. Use convolutional ZCA instead.
+# TODO: Handling nested attributes in hyperparam search.
 # TODO: Write documentation, add checks on user provided parameters, print exception in try-except-pass blocks, publish pip package.
 # TODO: (as needed)
 #  Add adversarial examples.
 #  Add deep layer visualization.
+#  Implement a generic ensamble model that takes pre-trained models from configuration.
+#  Implement test-time data augmentation.
+#  Add additional data augmentation transformations (random blur, random noise, cutout, mixup).
+#  Implement additional semi-supervised methods.
+#  Add other tasks and datasets (miniimagenet, imagenette, emnist, kmnist, fashion-mnist, svhn, celeba, pascal voc, ms coco).
 #  Add other dataset configurations.
 #  Add transfer learning configurations.
-#  Implement a generic ensamble model that takes pre-trained models from configuration.
-#  Implement test-time data augmentation
-#  Add additional data augmentation transformations (random blur, random noise, cutout, mixup).
-#  Add other tasks and datasets (miniimagenet, imagenette, emnist, kmnist, fashion-mnist, svhn, celeba, pascal voc).
 # TODO: Implement dispatch of different seeds/different hyperparam configs to different gpus.
 # TODO: Implement dispatch of different layers to different gpus.
 

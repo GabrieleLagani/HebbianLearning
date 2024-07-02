@@ -49,6 +49,7 @@ class CustomAugmentManager(AugmentManager):
 		T_augm.append(transforms.RandomApply([
 			transforms.ColorJitter(brightness=jit_brightness, contrast=jit_contrast, saturation=jit_saturation, hue=jit_hue/360)
 		], p=jit_p))
+		#T_augm.append(transforms.RandomApply([transforms.ColorJitter(saturation=1)], p=grayscale_p)) # Random color transformation from no saturation (grayscale) to full saturation (color)
 		T_augm.append(transforms.RandomGrayscale(p=grayscale_p))
 		T_augm.append(transforms.RandomHorizontalFlip())
 		T_augm.append(transforms.RandomApply([

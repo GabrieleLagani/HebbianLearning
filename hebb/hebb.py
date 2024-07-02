@@ -6,16 +6,20 @@ import params as P
 
 
 # TODO:
-#   - Normalization based on layer norm in addition to batch norm, Modified batch norm layer which computes stats only
+#   - Competitive nonlinearities normalized to have max=1, Hebbian/anti-Hebbian competitive nonlinearity
+#   - Remove border artifacts due to possible padding and introduce spatial decorrelation
+#   - Post nonlinear demixer ica, mix ica and pca, reconstruction with bias
+#   - Clustering with gauss nonlinearity integrated with vector projection similarity using weight vector as mean
+#       encoding and bias for variance, so that it is possible to find aligned clusters with dot product-based similarity.
+#   - Generalized parameter class for zeta mode as well as merged updates.
+#   - Generalized normalization based on layer norm in addition to batch norm, Modified batch norm layer which computes stats only
 #       adaptively, and not batch wise, and in the backward pass computes the gradients as if the stats were computed
 #       batch wise. Same also for other adaptive params. Possibility to normalize with average of variances rather than
 #       each feature with its own variance. Possibility to normalize with heuristics based on weights.
-#   - Add deferred update flag and local optimization inside module. Merged updates for all the adaptive parameters.
-#   - Post nonlinear demixer ica, mix ica and pca, reconstruction with bias.
-#   - Clustering with gauss nonlinearity integrated with vector projection similarity using weight vector as mean
-#       encoding and bias for variance, so that it is possible to find aligned clusters with dot product-based similarity.
-#   - Consider removing border artifacts due to possible padding
-#   - Other hebbian approaches
+#   - Temporal competition
+#   - Supervised Hebbian
+#   - Add deferred update flag and local optimization inside module
+#   - Other hebbian rules
 
 
 # A generalized normalization layer
@@ -209,25 +213,30 @@ class Competitive(nn.Module):
 
 # This module represents a layer of convolutional neurons that are trained with Hebbian algorithms
 class HebbianConv2d(nn.Module):
-	# s = sim(w, x), y = act(s) -- e.g.: s = w^T x, y = f(s)
+	# s = sim(w, x), y = act(s) z = competition(y) -- e.g.: s = w^T x, y = f(s), z = soft-WTA(y)
 	
 	# Type of gating term
-	GATE_BASE = 'gate_base'  # r = cmp_res
-	GATE_HEBB = 'gate_hebb'  # r = cmp_res * y
-	GATE_DIFF = 'gate_diff'  # r = cmp_res - y
-	GATE_SMAX = 'gate_smx'  # r = cmp_res - softmax(y)
+	GATE_BASE = 'gate_base'  # g = z
+	GATE_HEBB = 'gate_hebb'  # g = z * y
+	GATE_DIFF = 'gate_diff'  # g = z - y
+	GATE_SMAX = 'gate_smx'  # g = z - softmax(y)
+	
+	# Type of recombination terms
+	RECOMB_BASE = 'recomb_base'  # r = 1
+	RECOMB_Y = 'recomb_y'  # r = y
+	RECOMB_Z = 'recomb_z'  # r = z
 	
 	# Type of reconstruction scheme
 	REC_QNT = 'rec_qnt'  # reconstr = w
-	REC_QNT_SGN = 'rec_qnt_sgn'  # reconstr = sign(cmp_res) * w
+	REC_QNT_SGN = 'rec_qnt_sgn'  # reconstr = sign(g) * w
 	REC_LIN_CMB = 'rec_lin_cmb'  # reconstr = sum_i r_i w_i
 	
 	# Type of update step
-	UPD_RECONSTR = 'upd_reconstr' # delta_w = alpha * r * (x - reconstr)
-	UPD_ICA = 'upd_ica' # delta w_i = r_i (w_i - y_i rs^T W) # NB: the term r acts as gating
-	UPD_HICA = 'upd_hica' # delta w_i = r_i (w_i - y_i sum_(k=1..i) rs_k w_k)
-	UPD_ICA_NRM = 'upd_ica_nrm' # delta w_i = = r_i (w_i w_i^T - I) y_i rs^T W
-	UPD_HICA_NRM = 'upd_hica_nrm' # delta w_i = r_i (w_i w_i^T - I) y_i sum_(k=1..i) rs_k w_k
+	UPD_RECONSTR = 'upd_reconstr' # delta_w = alpha * g * (x - reconstr)
+	UPD_ICA = 'upd_ica' # delta w_i = g_i (w_i - z_i rs^T W)
+	UPD_HICA = 'upd_hica' # delta w_i = g_i (w_i - z_i sum_(k=1..i) rs_k w_k)
+	UPD_ICA_NRM = 'upd_ica_nrm' # delta w_i = = g_i (w_i w_i^T - I) z_i rs^T W
+	UPD_HICA_NRM = 'upd_hica_nrm' # delta w_i = g_i (w_i w_i^T - I) z_i sum_(k=1..i) rs_k w_k
 	
 	# ICA rule
 	# Delta W = (I - f(s) s^T) W
@@ -284,6 +293,8 @@ class HebbianConv2d(nn.Module):
 	ZETA_MODE_VEC = 'zeta_mode_vec'
 	ZETA_MODE_MAT = 'zeta_mode_mat'
 	
+	# Modes for teacher signal distribution
+	TEACHER_DISTRIB_SOFT_GROUPS = 'teacher_distrib_soft_groups'
 	
 	def __init__(self,
 	             in_channels,
@@ -309,10 +320,14 @@ class HebbianConv2d(nn.Module):
 	             act_complement_adapt=None,
 	             act_complement_grp=False,
 	             act_complement_affine=False,
+	             teacher_distrib=None,
 	             gating=GATE_HEBB,
 	             upd_rule=UPD_RECONSTR,
+	             adaptive_step=True,
 	             y_prime_gating=False,
 	             z_prime_gating=False,
+	             z_gating=True,
+	             recombination=RECOMB_Y,
 	             reconstruction=REC_LIN_CMB,
 	             reduction=RED_AVG,
 	             bias_init=None,
@@ -359,6 +374,7 @@ class HebbianConv2d(nn.Module):
 			w_norm = self.get_weight().view(self.weight.size(0), -1).norm(dim=1, p=2).view(-1, 1, 1, 1)
 			self.weight = self.weight / w_norm
 			if self.weight_ada is not None: self.weight_ada = self.weight_ada / w_norm
+		self.adaptive_step = adaptive_step
 		
 		# Alpha is the constant which determines the trade off between global and local updates
 		self.alpha_l = alpha_l
@@ -454,9 +470,15 @@ class HebbianConv2d(nn.Module):
 		
 		# Learning rule
 		self.teacher_signal = None  # Teacher signal for supervised training
+		if not (teacher_distrib in [None, self.TEACHER_DISTRIB_SOFT_GROUPS] or (isinstance(teacher_distrib, int) and teacher_distrib >= 0)):
+			raise ValueError("Invalid value for argument teacher_distrib: " + str(teacher_distrib))
+		self.teacher_distrib = teacher_distrib
 		if gating not in [self.GATE_BASE, self.GATE_HEBB, self.GATE_DIFF, self.GATE_SMAX]:
 			raise ValueError("Invalid value for argument gating: " + str(gating))
 		self.gating = gating
+		if recombination not in [None, self.RECOMB_BASE, self.RECOMB_Y, self.RECOMB_Z]:
+			raise ValueError("Invalid value for argument recombination: " + str(recombination))
+		self.recombination = recombination
 		if reconstruction not in [None, self.REC_QNT, self.REC_QNT_SGN, self.REC_LIN_CMB]:
 			raise ValueError("Invalid value for argument reconstruction: " + str(reconstruction))
 		self.reconstruction = reconstruction
@@ -466,6 +488,7 @@ class HebbianConv2d(nn.Module):
 		self.using_adaptive_weight = self.alpha_l != 0 and self.upd_rule is not None
 		self.y_prime_gating = y_prime_gating
 		self.z_prime_gating = z_prime_gating
+		self.z_gating = z_gating
 		if reduction not in [self.RED_AVG, self.RED_W_AVG]:
 			raise ValueError("Invalid value for argument reductioin: " + str(reduction))
 		self.reduction = reduction
@@ -479,9 +502,6 @@ class HebbianConv2d(nn.Module):
 		# Variables where the weight updates are stored
 		self.delta_w = None
 		self.delta_bias = None
-	
-	def set_teacher_signal(self, t):
-		self.teacher_signal = t
 		
 	def forward(self, x):
 		if self.training: self.compute_update(x)
@@ -528,6 +548,24 @@ class HebbianConv2d(nn.Module):
 		if self.conserve_var and self.var_adaptive: y = y * (self.trk.running_var.view(1, -1, 1, 1) + self.trk.eps) ** 0.5
 		
 		return y
+	
+	def set_teacher_signal(self, t):
+		if t is not None:
+			if self.teacher_distrib is None or self.teacher_distrib == 0:
+				self.teacher_signal = None
+			
+			elif self.teacher_distrib == self.TEACHER_DISTRIB_SOFT_GROUPS:
+				raise NotImplemented
+			
+			else: # self.teacher_distrib is a positive integer
+				if self.teacher_distrib * t.size(1) <= self.weight.size(0):
+					self.teacher_signal = torch.cat((
+						torch.ones(t.size(0), self.weight.size(0) - self.teacher_distrib * t.size(1), device=t.device),
+						t.view(t.size(0), t.size(1), 1).repeat(1, 1, self.teacher_distrib).view(t.size(0), -1)
+					), dim=1)
+				else: self.teacher_signal = None
+		
+		else: self.teacher_signal = t
 	
 	def compute_update(self, x):
 		# Store previous gradient computation flag and disable gradient computation before computing update
@@ -592,28 +630,30 @@ class HebbianConv2d(nn.Module):
 					z_prime = y.grad
 					y.grad = None
 					torch.set_grad_enabled(False)
-					
-				# Gate by teacher signal, if necessary
-				zt = z * t if t is not None else z
 				
 				if self.using_adaptive_weight:
 					# Compute step modulation coefficient
-					r = zt  # GATE_BASE
-					if self.gating == self.GATE_HEBB: r = r * y
-					if self.gating == self.GATE_DIFF: r = r - y
-					if self.gating == self.GATE_SMAX: r = r - torch.softmax(y, dim=1)
-					if self.y_prime_gating: r = y_prime * r
-					if self.z_prime_gating: r = z_prime * r
+					g = (z if self.z_gating else torch.ones_like(z)) * (t if t is not None else 1.) # GATE_BASE
+					if self.gating == self.GATE_HEBB: g = g * y
+					if self.gating == self.GATE_DIFF: g = g - y
+					if self.gating == self.GATE_SMAX: g = g - torch.softmax(y, dim=1)
+					if self.y_prime_gating: g = y_prime * g
+					if self.z_prime_gating: g = z_prime * g
+					
+					# Compute recombination coefficients
+					r = torch.ones_like(z) * (t if t is not None else 1.) # RECOMB_BASE
+					if self.recombination == self.RECOMB_Y: r = r * y
+					if self.recombination == self.RECOMB_Z: r = r * z
 					
 					# Compute the coefficients for update reduction/aggregation over the batch.
 					# Since we use batches of inputs, we need to aggregate the different update steps of each kernel in a unique
 					# update. We do this by taking the weighted average of the steps, the weights being the r coefficients that
 					# determine the length of each step (RED_W_AVG), or the unweighted average (RED_AVG).
-					c = 1/r.size(0)
+					c = 1/g.size(0)
 					if self.reduction == self.RED_W_AVG:
-						r_sum = r.abs().sum(dim=0, keepdim=True)
-						r_sum = r_sum + (r_sum == 0).float()  # Prevent divisions by zero
-						c = r.abs()/r_sum
+						g_sum = g.abs().sum(dim=0, keepdim=True)
+						g_sum = g_sum + (g_sum == 0).float()  # Prevent divisions by zero
+						c = g.abs()/g_sum
 					
 					# Compute delta_w
 					delta_w_agg = torch.zeros_like(self.weight.view(self.weight.size(0), -1))
@@ -623,7 +663,7 @@ class HebbianConv2d(nn.Module):
 						if self.act_complement_grp: grp_slice = slice(self.act_complement_from_idx) if grp == 0 else slice(self.act_complement_from_idx, self.weight.size(0))
 						w = (self.weight_ada if self.weight_ada is not None else self.weight).view(1, self.weight.size(0), -1)[:, grp_slice, :]
 						x_bar = None
-						rrlw = None
+						grlw = None
 						sw = None
 						
 						if P.HEBB_FASTHEBB:
@@ -643,40 +683,42 @@ class HebbianConv2d(nn.Module):
 								w_i = w[:, start:end, :]
 								s_i = s[:, grp_slice].unsqueeze(2)[:, start:end, :]
 								y_i = y[:, grp_slice].unsqueeze(2)[:, start:end, :]
+								z_i = z[:, grp_slice].unsqueeze(2)[:, start:end, :]
+								g_i = g[:, grp_slice].unsqueeze(2)[:, start:end, :]
 								r_i = r[:, grp_slice].unsqueeze(2)[:, start:end, :]
 								c_i = c[:, grp_slice].unsqueeze(2)[:, start:end, :] if isinstance(c, torch.Tensor) else c
-								rc = r_i * c_i
+								gc = g_i * c_i
 								
 								# Compute update step
 								delta_w_i = torch.zeros_like(w_i)
 								if self.upd_rule == self.UPD_RECONSTR:
-									delta_w_i = rc.view(rc.size(0), -1).t().matmul(x_unf.view(x_unf.size(0), -1))
+									delta_w_i = gc.view(gc.size(0), -1).t().matmul(x_unf.view(x_unf.size(0), -1))
 									# Compute reconstr based on the type of reconstruction
-									if self.reconstruction == self.REC_QNT: delta_w_i = delta_w_i - rc.sum(0) * w_i.view(w_i.size(1), -1)
-									elif self.reconstruction == self.REC_QNT_SGN: delta_w_i = delta_w_i - (rc * r_i.sign()).sum(0) * w_i.view(w_i.size(1), -1)
+									if self.reconstruction == self.REC_QNT: delta_w_i = delta_w_i - gc.sum(0) * w_i.view(w_i.size(1), -1)
+									elif self.reconstruction == self.REC_QNT_SGN: delta_w_i = delta_w_i - (gc * g_i.sign()).sum(0) * w_i.view(w_i.size(1), -1)
 									elif self.reconstruction == self.REC_LIN_CMB:
 										if P.HEBB_REORDMULT:
 											l_i = (torch.arange(w.size(1), device=w.device).unsqueeze(0).repeat(w_i.size(1), 1) <= torch.arange(start, end, device=w.device).unsqueeze(1)).float()
-											rrlw = (rc.view(rc.size(0), -1).t().matmul(r[:, grp_slice]) * l_i).matmul(w.view(w.size(1), -1))
-											delta_w_i = delta_w_i - rrlw
+											grlw = (gc.view(gc.size(0), -1).t().matmul(r[:, grp_slice]) * l_i).matmul(w.view(w.size(1), -1))
+											delta_w_i = delta_w_i - grlw
 										else:
 											x_bar = torch.cumsum(r_i * w_i, dim=1) + (x_bar[:, -1, :].unsqueeze(1) if x_bar is not None else 0.)
-											delta_w_i = delta_w_i - rc.permute(1, 2, 0).matmul(x_bar.permute(1, 0, 2)).view(w_i.size(1), -1)
+											delta_w_i = delta_w_i - gc.permute(1, 2, 0).matmul(x_bar.permute(1, 0, 2)).view(w_i.size(1), -1)
 								if self.upd_rule in [self.UPD_ICA, self.UPD_HICA, self.UPD_ICA_NRM, self.UPD_HICA_NRM]:
 									if P.HEBB_REORDMULT:
 										if self.upd_rule == self.UPD_HICA or self.upd_rule == self.UPD_HICA_NRM:
 											l_i = (torch.arange(w.size(1), device=w.device).unsqueeze(0).repeat(w_i.size(1), 1) <= torch.arange(start, end, device=w.device).unsqueeze(1)).float()
-											rysw = ((rc * y_i).view(rc.size(0), -1).t().matmul(r[:, grp_slice] * s[:, grp_slice]) * l_i).matmul(w.view(w.size(1), -1))
+											gzsw = ((gc * z_i).view(gc.size(0), -1).t().matmul(r[:, grp_slice] * s[:, grp_slice]) * l_i).matmul(w.view(w.size(1), -1))
 										else:
-											rysw = (rc * y_i).view(rc.size(0), -1).t().matmul(r[:, grp_slice] * s[:, grp_slice]).matmul(w.view(w.size(1), -1))
+											gzsw = (gc * z_i).view(gc.size(0), -1).t().matmul(r[:, grp_slice] * s[:, grp_slice]).matmul(w.view(w.size(1), -1))
 									else:
 										if self.upd_rule == self.UPD_HICA or self.upd_rule == self.UPD_HICA_NRM:
 											sw = torch.cumsum((r_i * s_i) * w_i, dim=1) + (sw[:, -1, :].unsqueeze(1) if sw is not None else 0.)
-										rysw = (rc * y_i * sw).sum(0)
+										gzsw = (gc * z_i * sw).sum(0)
 									if self.upd_rule == self.UPD_ICA or self.upd_rule == self.UPD_HICA:
-										delta_w_i = rc.sum(0) * w_i.view(w_i.size(1), -1) - rysw
+										delta_w_i = gc.sum(0) * w_i.view(w_i.size(1), -1) - gzsw
 									if self.upd_rule == self.UPD_ICA_NRM or self.upd_rule == self.UPD_HICA_NRM:
-										delta_w_i = (rysw * w_i.view(w_i.size(1), -1)).sum(dim=1, keepdim=True) * w_i.view(w_i.size(1), -1) - rysw
+										delta_w_i = (gzsw * w_i.view(w_i.size(1), -1)).sum(dim=1, keepdim=True) * w_i.view(w_i.size(1), -1) - gzsw
 										
 								# Store aggregated update in buffer
 								delta_w_agg[grp_slice, :][start:end, :] = delta_w_i
@@ -697,7 +739,8 @@ class HebbianConv2d(nn.Module):
 								w_i = w[:, start:end, :]
 								s_i = s[:, grp_slice].unsqueeze(2)[:, start:end, :]
 								y_i = y[:, grp_slice].unsqueeze(2)[:, start:end, :]
-								r_i = r[:, grp_slice].unsqueeze(2)[:, start:end, :]
+								z_i = z[:, grp_slice].unsqueeze(2)[:, start:end, :]
+								g_i = g[:, grp_slice].unsqueeze(2)[:, start:end, :]
 								c_i = c[:, grp_slice].unsqueeze(2)[:, start:end, :] if isinstance(c, torch.Tensor) else c
 								
 								# Compute update step
@@ -705,63 +748,69 @@ class HebbianConv2d(nn.Module):
 								if self.upd_rule == self.UPD_RECONSTR:
 									# Compute reconstr based on the type of reconstruction
 									if self.reconstruction == self.REC_QNT: x_bar = w_i
-									elif self.reconstruction == self.REC_QNT_SGN: x_bar = r_i.sign() * w_i
+									elif self.reconstruction == self.REC_QNT_SGN: x_bar = g_i.sign() * w_i
 									elif self.reconstruction == self.REC_LIN_CMB: x_bar = torch.cumsum(r_i * w_i, dim=1) + (x_bar[:, -1, :].unsqueeze(1) if x_bar is not None else 0.)
 									else: x_bar = 0.
-									delta_w_i = r_i * (x_unf - x_bar)
+									delta_w_i = g_i * (x_unf - x_bar)
 								if self.upd_rule in [self.UPD_ICA, self.UPD_HICA, self.UPD_ICA_NRM, self.UPD_HICA_NRM]:
 									if self.upd_rule == self.UPD_HICA or self.upd_rule == self.UPD_HICA_NRM:
 										sw = torch.cumsum((r_i * s_i) * w_i, dim=1) + (sw[:, -1, :].unsqueeze(1) if sw is not None else 0.)
-									ysw = (y_i * sw)
+									zsw = (z_i * sw)
 									if self.upd_rule == self.UPD_ICA or self.upd_rule == self.UPD_HICA:
-										delta_w_i = r_i * (w_i - ysw)
+										delta_w_i = g_i * (w_i - zsw)
 									if self.upd_rule == self.UPD_ICA_NRM or self.upd_rule == self.UPD_HICA_NRM:
-										delta_w_i = r_i * ((ysw * w_i).sum(dim=2, keepdim=True) * w_i - ysw)
+										delta_w_i = g_i * ((zsw * w_i).sum(dim=2, keepdim=True) * w_i - zsw)
 								
 								# Aggregate updates over batch
 								delta_w_agg[grp_slice, :][start:end, :] = (delta_w_i * c_i).sum(0)
 					
 					# Store delta
 					self.delta_w = delta_w_agg.view_as(self.weight)
+					# Layer size-based adaptive step (not necessary if we are using WTA-type learning)
+					if self.adaptive_step and not (self.upd_rule == self.UPD_RECONSTR and self.reconstruction in [self.REC_QNT, self.REC_QNT_SGN]):
+						self.delta_w = self.delta_w / ((self.weight.size(1) * self.weight.size(2) * self.weight.size(3))**0.5)
 				
 				if self.using_adaptive_bias:
 					# Compute step modulation coefficient
-					r = zt  # GATE_BASE
+					g = (z if self.z_gating else torch.ones_like(z)) * (t if t is not None else 1.) # GATE_BASE
 					b = (self.bias_ada if self.bias_ada is not None else self.bias).view(1, -1)
-					if self.bias_gating == self.GATE_HEBB: r = r * y
-					if self.bias_gating == self.GATE_DIFF: r = r - y
-					if self.bias_gating == self.GATE_SMAX: r = r - torch.softmax(y, dim=1)
-					if self.bias_gating is None: r = 1.
-					if self.y_prime_gating: r = y_prime * r
-					if self.z_prime_gating: r = z_prime * r
-					if self.bias_var_gating: r = r * s * (torch.log(s) / b.view(1, -1))
+					if self.bias_gating == self.GATE_HEBB: g = g * y
+					if self.bias_gating == self.GATE_DIFF: g = g - y
+					if self.bias_gating == self.GATE_SMAX: g = g - torch.softmax(y, dim=1)
+					if self.bias_gating is None: g = 1.
+					if self.y_prime_gating: g = y_prime * g
+					if self.z_prime_gating: g = z_prime * g
+					if self.bias_var_gating: g = g * s * (torch.log(s) / b.view(1, -1))
 					
 					# Compute the coefficients for update reduction/aggregation over the batch.
-					c = 1/r.size(0)
+					c = 1/g.size(0)
 					if self.reduction == self.RED_W_AVG:
-						r_sum = r.abs().sum(dim=0, keepdim=True)
-						r_sum = r_sum + (r_sum == 0).float()  # Prevent divisions by zero
-						c = r.abs()/r_sum
+						g_sum = g.abs().sum(dim=0, keepdim=True)
+						g_sum = g_sum + (g_sum == 0).float()  # Prevent divisions by zero
+						c = g.abs()/g_sum
 					
 					# Compute Delta bias
 					delta_bias = torch.zeros_like(self.bias).unsqueeze(0)
 					if self.bias_mode == self.BIAS_MODE_BASE:
-						delta_bias = r
+						delta_bias = g
 					if self.bias_mode == self.BIAS_MODE_TARG:
 						# NB: self.bias_target is the target mean that we want the bias to achieve
-						delta_bias = r * (self.bias_target - s)
+						delta_bias = g * (self.bias_target - s)
 					if self.bias_mode == self.BIAS_MODE_STD:
 						# NB: self.bias_target is the number of std devs away from the mean that we want the bias to achieve
-						delta_bias = r * (self.bias_target * (self.trk.running_var ** 0.5).view(1, -1) - s)
+						delta_bias = g * (self.bias_target * (self.trk.running_var ** 0.5).view(1, -1) - s)
 					if self.bias_mode == self.BIAS_MODE_PERC:
 						# NB: self.bias target is the target percentile of samples above zero that we want the similarity function to achieve
-						delta_bias = r * (self.bias_target - (s < 0).float())
+						delta_bias = g * (self.bias_target - (s < 0).float())
 					if self.bias_mode == self.BIAS_MODE_EXP:
 						# NB: self.bias_target is the number of std devs that we want the scale of the similarity function to achieve
-						delta_bias = r * b * (1 - (-torch.log(s)) * self.bias_target)
+						delta_bias = g * b * (1 - (-torch.log(s)) * self.bias_target)
 					
 					# Aggregate updates over the batch and store delta
 					self.delta_bias = c.t().unsqueeze(1).matmul(delta_bias.t().unsqueeze(2)).view_as(self.bias)
+					# Layer size-based adaptive step (not necessary if we are using WTA-type learning)
+					if self.adaptive_step and not (self.upd_rule == self.UPD_RECONSTR and self.reconstruction in [self.REC_QNT, self.REC_QNT_SGN]):
+						self.delta_bias = self.delta_bias / ((self.weight.size(1) * self.weight.size(2) * self.weight.size(3))**0.5)
 		
 		# Restore gradient computation
 		torch.set_grad_enabled(prev_grad_enabled)

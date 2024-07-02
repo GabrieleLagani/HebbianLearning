@@ -1,6 +1,7 @@
 HEBB_UPD_GRP = 128 # In the Hebbian module, how many kernels to update in parallel on GPU. Larger is faster, but make it smaller to avoid memory overflow.
 HEBB_FASTHEBB = True # Whether to use fast hebbian update computation based on matmul
 HEBB_REORDMULT = True # Whether to use multiplication reordering with early batch-wise aggregation
+KEY_NUM_HIDDEN = 'num_hidden'
 KEY_VAE_NUM_LATENT_VARS = 'vae_num_latent_vars'
 KEY_VGG_MODEL = 'vgg_model'
 KEY_COMPETITIVE_ACT = 'competitive_act'
@@ -33,5 +34,4 @@ KEY_OUT_ACT_SCALE_OUT = 'out_act_scale_out'
 KEY_OUT_ACT_OFFSET_IN = 'out_act_offset_in'
 KEY_OUT_ACT_OFFSET_OUT = 'out_act_offset_out'
 KEY_OUT_ACT_P = 'out_act_p'
-KEY_NUM_HIDDEN = 'num_hidden'
 

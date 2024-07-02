@@ -1,60 +1,52 @@
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
+
 from neurolab import params as P
-from neurolab import utils
-from neurolab.model import Model
+from neurolab.model import SimpleWrapper
 import hebb as H
 from hebb import functional as HF
+from .base import HebbFactory
+import utils
 
 
-class Net(Model):
+class Net(SimpleWrapper):
+	def wrapped_init(self, config, input_shape=None):
+		self.NUM_CLASSES = P.GLB_PARAMS[P.KEY_DATASET_METADATA][P.KEY_DS_NUM_CLASSES]
+		
+		return Model(input_shape=input_shape, num_classes=self.NUM_CLASSES,hebb_param_dict=config.CONFIG_OPTIONS)
+
+	def set_teacher_signal(self, y):
+		if y is not None: y = utils.dense2onehot(y, self.NUM_CLASSES)
+		super().set_teacher_signal(y)
+
+class Model(nn.Module):
 	# Layer names
 	FC = 'fc'
 	CLF_OUTPUT = 'clf_output' # Name of the classification output providing the class scores
 	
-	def __init__(self, config, input_shape=None):
-		super(Net, self).__init__(config, input_shape)
+	def __init__(self, input_shape=None, num_classes=10, hebb_param_dict=None):
+		super().__init__()
 		
-		self.NUM_CLASSES = P.GLB_PARAMS[P.KEY_DATASET_METADATA][P.KEY_DS_NUM_CLASSES]
-		self.ALPHA_L = config.CONFIG_OPTIONS.get(P.KEY_ALPHA_L, 1.)
-		self.ALPHA_G = config.CONFIG_OPTIONS.get(P.KEY_ALPHA_G, 0.)
+		self.INPUT_SHAPE = input_shape
+		self.NUM_CLASSES = num_classes
+		self.HEBB_PARAM_DICT = hebb_param_dict
+		self.hfactory = HebbFactory(hebb_param_dict)
 		
 		# Here we define the layers of our network
 		
-		self.fc = H.HebbianConv2d(
-			in_channels=self.get_input_shape()[0],
-			out_channels=self.NUM_CLASSES,
-			kernel_size=1,
-			lrn_sim=HF.get_affine_sim(HF.raised_cos_sim2d, p=2),
-			lrn_act=HF.identity,
-			lrn_cmp=True,
-			lrn_t=True,
-			out_sim=HF.vector_proj2d if self.ALPHA_G == 0. else HF.kernel_mult2d,
-			out_act=HF.identity,
-			competitive=H.Competitive(),
-			gating=H.HebbianConv2d.GATE_BASE,
-			upd_rule=H.HebbianConv2d.UPD_RECONSTR if self.ALPHA_G == 0. else None,
-			reconstruction=H.HebbianConv2d.REC_QNT_SGN,
-			reduction=H.HebbianConv2d.RED_W_AVG,
-			alpha_l=self.ALPHA_L, 
-			alpha_g=self.ALPHA_G if self.ALPHA_G == 0. else 1.,
-		)  # input_shape-shaped input, NUM_CLASSES-dimensional output (one per class)
+		# Final FC layer: input_shape-shaped input, self.NUM_CLASSES-dimensional output (one per class)
+		self.fc = self.hfactory.create_hebb_layer(final=True, in_channels=input_shape[0], out_channels=self.NUM_CLASSES, kernel_size=(input_shape[1], input_shape[2]) if len(input_shape) >= 3 else 1, teacher_distrib=1)
 	
 	# Here we define the flow of information through the network
 	def forward(self, x):
 		out = {}
 		
 		# Linear FC layer, outputs are the class scores
-		fc_out = self.fc(x if len(self.get_input_shape()) >= 3 else x.view(x.size(0), x.size(1), 1, 1)).view(-1, self.NUM_CLASSES)
+		fc_out = self.fc(x if len(self.INPUT_SHAPE) >= 3 else x.view(x.size(0), x.size(1), 1, 1)).view(-1, self.NUM_CLASSES)
 		
 		# Build dictionary containing outputs from convolutional and FC layers
 		out[self.FC] = fc_out
 		out[self.CLF_OUTPUT] = {P.KEY_CLASS_SCORES: fc_out}
 		return out
-	
-	def set_teacher_signal(self, y):
-		if isinstance(y, dict): y = y[P.KEY_LABEL_TARGETS]
-		if y is not None: y = utils.dense2onehot(y, self.NUM_CLASSES)
-		self.fc.set_teacher_signal(y)
-		
-	def local_updates(self):
-		self.fc.local_update()
 

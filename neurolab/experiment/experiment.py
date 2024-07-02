@@ -91,20 +91,17 @@ class Experiment:
 			self.scheduler = self.sched_manager.get_scheduler(self.optimizer, saved_state=d['scheduler']) if self.sched_manager is not None else None
 		self.logger.print_and_log("Optimization state recovered!")
 	
-	# Transform output of a processing module to input in the form expected by next processing stages
-	def select_output(self, outputs, i):
+	# Returns the keys for selecting outputs from a processing module before feeding them to the next module
+	def select_output(self, i):
 		L = 0
 		if self.config.CONFIG_OPTIONS.get(P.KEY_PRE_NET_MODULES, None) is not None: L = len(self.config.CONFIG_OPTIONS[P.KEY_PRE_NET_MODULES])
-		which_output = '*' # * gives the whole output dictionary
-		if self.config.CONFIG_OPTIONS.get(P.KEY_PRE_NET_OUTPUTS if i < L else P.KEY_NET_OUTPUTS, None) is not None and (i if i < L else (i - L)) < len(self.config.CONFIG_OPTIONS[P.KEY_PRE_NET_OUTPUTS if i < L else P.KEY_NET_OUTPUTS]):
-			which_output = self.config.CONFIG_OPTIONS[P.KEY_PRE_NET_OUTPUTS if i < L else P.KEY_NET_OUTPUTS][i if i < L else (i - L)]
-		
-		# Fetch specific entry of output dictionary, if needed
-		if which_output == '*': res = outputs
-		elif '+' in which_output: res = {key: outputs[key] for key in which_output.split('+') if key != ''}
-		else: res = outputs[which_output]
-		
-		return res
+		which_output = None
+		if self.config.CONFIG_OPTIONS.get(P.KEY_PRE_NET_OUTPUTS if i < L else P.KEY_NET_OUTPUTS, None) is not None:
+			if (i if i < L else (i - L)) < len(self.config.CONFIG_OPTIONS[P.KEY_PRE_NET_OUTPUTS if i < L else P.KEY_NET_OUTPUTS]):
+				which_output = self.config.CONFIG_OPTIONS[P.KEY_PRE_NET_OUTPUTS if i < L else P.KEY_NET_OUTPUTS][i if i < L else (i - L)]
+		if which_output is not None and '+' in which_output: which_output = {key for key in which_output.split('+') if key != '_'}
+		if which_output == '' or which_output == set(): which_output = None
+		return which_output
 	
 	# Prepare experiment by loading various components needed during execution
 	def prepare(self):
@@ -127,6 +124,9 @@ class Experiment:
 	def load_models(self):
 		self.logger.print_and_log("Preparing network...")
 		
+		# Input shape of the stack of models. By default, this is taken from the dataset samples shape
+		input_shape = self.config.CONFIG_OPTIONS.get(P.KEY_INPUT_SHAPE, P.GLB_PARAMS[P.KEY_DATASET_METADATA][P.KEY_DS_INPUT_SHAPE])
+		
 		# Load pre-processing network
 		pre_net_list = []
 		pre_net_modules = self.config.CONFIG_OPTIONS.get(P.KEY_PRE_NET_MODULES, None)
@@ -134,8 +134,7 @@ class Experiment:
 		if pre_net_modules is not None:
 			for i in range(len(pre_net_modules)):
 				# Load pre-processing network if needed
-				input_shape = self.config.CONFIG_OPTIONS.get(P.KEY_INPUT_SHAPE, None)
-				if i > 0: input_shape = utils.tens2shape(self.select_output(pre_net_list[i - 1].get_dummy_fmap(fwd=True), i - 1))
+				if i > 0: input_shape = pre_net_list[i - 1].get_output_shape(input_shape, queries=self.select_output(i - 1))
 				pre_net_list += [utils.retrieve(pre_net_modules[i])(config=self.specify_config(self.config, i), input_shape=input_shape)]
 				if pre_net_mdl_paths is not None and i < len(pre_net_mdl_paths) and pre_net_mdl_paths[i] is not None:
 					self.logger.print_and_log("Searching for available saved model for pre-network " + str(i) + "...")
@@ -151,15 +150,14 @@ class Experiment:
 		self.pre_net_list = pre_net_list
 		
 		# Load network
-		input_shape = self.config.CONFIG_OPTIONS.get(P.KEY_INPUT_SHAPE, None)
-		if len(pre_net_list) > 0: input_shape = utils.tens2shape(self.select_output(pre_net_list[len(pre_net_list) - 1].get_dummy_fmap(fwd=True), len(pre_net_list) - 1))
+		if len(pre_net_list) > 0: input_shape = pre_net_list[len(pre_net_list) - 1].get_output_shape(queries=self.select_output(len(pre_net_list) - 1))
 		net_list = []
 		net_modules = self.config.CONFIG_OPTIONS[P.KEY_NET_MODULES]
 		net_mdl_paths = self.config.CONFIG_OPTIONS.get(P.KEY_NET_MDL_PATHS, None)
 		testing_saved_model = (self.config.MODE == P.MODE_TST and self.config.CONFIG_OPTIONS[P.KEY_NUM_EPOCHS] > 0)
 		for i in range(len(net_modules)):
 			# Load network models
-			if i > 0: input_shape = utils.tens2shape(self.select_output(net_list[i - 1].get_dummy_fmap(fwd=True), len(pre_net_list) + i - 1))
+			if i > 0: input_shape = net_list[i - 1].get_output_shape(queries=self.select_output(len(pre_net_list) + i - 1))
 			net_list += [utils.retrieve(net_modules[i])(config=self.specify_config(self.config, len(pre_net_list) + i), input_shape=input_shape)]
 			if testing_saved_model or (net_mdl_paths is not None and i < len(net_mdl_paths) and net_mdl_paths[i] is not None):
 				# Load network model to be tested or pre-trained network model for fine tuning

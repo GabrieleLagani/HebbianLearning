@@ -3,12 +3,23 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 from neurolab import params as P
-from neurolab import utils
-from neurolab.model import Model
+from neurolab.model import SimpleWrapper
 import params as PP
 
+import utils
 
-class Net(Model):
+
+class Net(SimpleWrapper):
+	def wrapped_init(self, config, input_shape=None):
+		self.NUM_CLASSES = P.GLB_PARAMS[P.KEY_DATASET_METADATA][P.KEY_DS_NUM_CLASSES]
+		self.NUM_HIDDEN = config.CONFIG_OPTIONS.get(P.KEY_NUM_HIDDEN, 4096)
+		self.DROPOUT_P = config.CONFIG_OPTIONS.get(P.KEY_DROPOUT_P, 0.5)
+		self.NUM_LATENT_VARS = config.CONFIG_OPTIONS.get(PP.KEY_VAE_NUM_LATENT_VARS, 256)
+		
+		return Model(input_shape=input_shape, num_classes=self.NUM_CLASSES, num_hidden=self.NUM_HIDDEN, dropout_p=self.DROPOUT_P)
+
+
+class Model(nn.Module):
 	# Layer names
 	CONV1 = 'conv1'
 	RELU1 = 'relu1'
@@ -49,13 +60,14 @@ class Net(Model):
 	VAE_OUTPUT = 'vae_output' # Name for the vae output consisting of reconstruction and latent variables statistics
 	POOL_INDICES = 'pool_indices' # Name of the dictionary entry containing indices resulting from max pooling
 	
-	def __init__(self, config, input_shape=None):
-		super(Net, self).__init__(config, input_shape)
+	def __init__(self, input_shape=None, num_classes=10, num_latent=256, num_hidden=4096, dropout_p=0.):
+		super().__init__()
 		
-		self.NUM_CLASSES = P.GLB_PARAMS[P.KEY_DATASET_METADATA][P.KEY_DS_NUM_CLASSES]
-		self.NUM_HIDDEN = config.CONFIG_OPTIONS.get(PP.KEY_NUM_HIDDEN, 4096)
-		self.DROPOUT_P = config.CONFIG_OPTIONS.get(P.KEY_DROPOUT_P, 0.5)
-		self.NUM_LATENT_VARS = config.CONFIG_OPTIONS.get(PP.KEY_VAE_NUM_LATENT_VARS, 256)
+		self.INPUT_SHAPE = input_shape
+		self.NUM_CLASSES = num_classes
+		self.NUM_LATENT_VARS = num_latent
+		self.NUM_HIDDEN = num_hidden
+		self.DROPOUT_P = dropout_p
 		
 		# Here we define the layers of our network
 		
@@ -84,7 +96,8 @@ class Net(Model):
 		self.conv8 = nn.Conv2d(384, 512, 3)  # 384 input channels, 512 output channels, 3x3 convolutions
 		self.bn8 = nn.BatchNorm2d(512) # Batch Norm layer
 		
-		self.CONV_OUTPUT_SHAPE = utils.tens2shape(self.get_dummy_fmap()[self.CONV_OUTPUT])
+		self.CONV_OUTPUT_SHAPE = None
+		self.CONV_OUTPUT_SHAPE = utils.get_output_fmap_shape(self, input_shape)[self.CONV_OUTPUT]
 		self.CONV_OUTPUT_SIZE = utils.shape2size(self.CONV_OUTPUT_SHAPE)
 		
 		# FC Layers
@@ -205,6 +218,8 @@ class Net(Model):
 		# Compute the output feature map from the convolutional layers
 		out = self.get_conv_output(x)
 		pool_indices = out[self.POOL_INDICES]
+		
+		if self.CONV_OUTPUT_SHAPE is None: return out
 		
 		# Stretch out the feature map before feeding it to the FC layers
 		flat = out[self.CONV_OUTPUT].view(-1, self.CONV_OUTPUT_SIZE)

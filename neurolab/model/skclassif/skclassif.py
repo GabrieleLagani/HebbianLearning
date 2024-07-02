@@ -3,10 +3,11 @@ from sklearn.kernel_approximation import Nystroem
 
 from ... import params as P
 from ... import utils
-from ..model import Model
+from ..mwrapper import ModuleWrapper
+
 
 # Base class as wrapper for classifiers from scikit learn
-class SkClassif(Model):
+class SkClassif(ModuleWrapper):
 	# Layer names
 	CLF = 'clf'
 	CLASS_SCORES = 'class_scores' # Name of the classification output providing the class scores
@@ -39,12 +40,12 @@ class SkClassif(Model):
 		d['clf_fitted'] = self.clf_fitted
 		return d
 	
-	def load_state_dict(self, state_dict, strict = ...):
+	def load_state_dict(self, state_dict, strict=True):
 		self.nystroem = state_dict.pop('nystroem')
 		self.clf = state_dict.pop('clf')
 		self.nystroem_fitted = state_dict.pop('nystroem_fitted')
 		self.clf_fitted = state_dict.pop('clf_fitted')
-		super(SkClassif, self).load_state_dict(state_dict, strict)
+		return super(SkClassif, self).load_state_dict(state_dict, strict)
 	
 	def norm_if_needed(self, x):
 		if not self.normalize: return x
@@ -57,7 +58,7 @@ class SkClassif(Model):
 		return (x >= 0).float()
 	
 	# Here we define the flow of information through the network
-	def forward(self, x):
+	def wrapped_forward(self, x):
 		x = self.binarize_if_needed(x.view(x.size(0), -1)).tolist() # Binarize input if needed
 		
 		# Here we append inputs to training pipeline if we are in training mode
@@ -82,7 +83,7 @@ class SkClassif(Model):
 					self.X_transformed = []
 					self.y = []
 		
-		return self.compute_output(self.norm_if_needed(self.nystroem.transform(x) if self.nystroem is not None else x))
+		return self.compute_output(self.norm_if_needed(self.nystroem.transform(x) if self.nystroem is not None and self.nystroem_fitted else x))
 	
 	# Process incput batch and compute output dictionary
 	def compute_output(self, x):

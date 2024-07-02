@@ -80,7 +80,7 @@ class VisionExperiment(Experiment):
 		inputs, targets, batch_count = self.prepare_batch(batch)
 		
 		# Feed inputs to pre-processing networks
-		for i in range(len(self.pre_net_list)): inputs = self.select_output(self.pre_net_list[i](inputs), i) # Let the network process the ipnut
+		for i in range(len(self.pre_net_list)): inputs = self.pre_net_list[i](inputs, queries=self.select_output(i)) # Let the network process the ipnut
 		
 		# Start gradient tracking if required
 		torch.set_grad_enabled(self.loss is not None and self.net_list[-1].training)
@@ -90,7 +90,7 @@ class VisionExperiment(Experiment):
 			# Set teacher signal (for local learning rules)
 			if self.net_list[i].training: self.net_list[i].set_teacher_signal(targets)
 			# Forward step. Select the output from the required layer and prepare it in the correct form expected by successive processing stages
-			outputs = self.select_output(self.net_list[i](outputs if i > 0 else inputs), len(self.pre_net_list) + i) # Let the network process the input
+			outputs = self.net_list[i](outputs if i > 0 else inputs, queries=self.select_output(len(self.pre_net_list) + i)) # Let the network process the input
 			# Unset teacher signal (for local learning rules)
 			if self.net_list[i].training: self.net_list[i].set_teacher_signal(None)
 		
@@ -100,7 +100,7 @@ class VisionExperiment(Experiment):
 			if self.loss is not None:
 				loss = self.loss(outputs, targets)  # compute loss
 				loss.backward()  # Backward step (compute gradients)
-			for i in range(len(self.net_list)): self.net_list[i].local_updates() # Another backward step, apply weight updates computed from local learning rules
+			for i in range(len(self.net_list)): self.net_list[i].local_update() # Another backward step, apply weight updates computed from local learning rules
 			self.precond_grads() # Apply pre-conditioning to gradients
 			self.optimizer.step()  # Optimize (update weights)
 		
@@ -171,5 +171,5 @@ class VisionExperiment(Experiment):
 class AEVisionExperiment(VisionExperiment):
 	def prepare_batch(self, batch):
 		inputs, targets, batch_count = super().prepare_batch(batch)
-		targets = {P.KEY_RECONSTR_TARGETS:inputs, P.KEY_LABEL_TARGETS: targets} # Transform targets into a dictionary containing label and reconstruction targets
+		targets = {P.KEY_RECONSTR_TARGETS: inputs, P.KEY_LABEL_TARGETS: targets} # Transform targets into a dictionary containing label and reconstruction targets
 		return inputs, targets, batch_count

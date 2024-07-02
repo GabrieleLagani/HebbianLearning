@@ -2,12 +2,21 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 from neurolab import params as P
-from neurolab import utils
-from neurolab.model import Model
-import params as PP
+from neurolab.model import SimpleWrapper
+
+import utils
 
 
-class Net(Model):
+class Net(SimpleWrapper):
+	def wrapped_init(self, config, input_shape=None):
+		self.NUM_CLASSES = P.GLB_PARAMS[P.KEY_DATASET_METADATA][P.KEY_DS_NUM_CLASSES]
+		self.NUM_HIDDEN = config.CONFIG_OPTIONS.get(P.KEY_NUM_HIDDEN, 4096)
+		self.DROPOUT_P = config.CONFIG_OPTIONS.get(P.KEY_DROPOUT_P, 0.5)
+		
+		return Model(input_shape=input_shape, num_classes=self.NUM_CLASSES, num_hidden=self.NUM_HIDDEN, dropout_p=self.DROPOUT_P)
+	
+
+class Model(nn.Module):
 	# Layer names
 	CONV7 = 'conv7'
 	RELU7 = 'relu7'
@@ -24,23 +33,25 @@ class Net(Model):
 	FC10 = 'fc10'
 	CLF_OUTPUT = 'clf_output' # Name of the classification output providing the class scores
 	
-	def __init__(self, config, input_shape=None):
-		super(Net, self).__init__(config, input_shape)
+	def __init__(self, input_shape=None, num_classes=10, num_hidden=4096, dropout_p=0.):
+		super().__init__()
 		
-		self.NUM_CLASSES = P.GLB_PARAMS[P.KEY_DATASET_METADATA][P.KEY_DS_NUM_CLASSES]
-		self.NUM_HIDDEN = config.CONFIG_OPTIONS.get(PP.KEY_NUM_HIDDEN, 4096)
-		self.DROPOUT_P = config.CONFIG_OPTIONS.get(P.KEY_DROPOUT_P, 0.5)
+		self.INPUT_SHAPE = input_shape
+		self.NUM_CLASSES = num_classes
+		self.NUM_HIDDEN = num_hidden
+		self.DROPOUT_P = dropout_p
 		
 		# Here we define the layers of our network
 		
 		# Seventh convolutional layer
-		self.conv7 = nn.Conv2d(self.get_input_shape()[0], 384, 3)  # 256 input channels, 384 output channels, 3x3 convolutions
+		self.conv7 = nn.Conv2d(256, 384, 3)  # 256 input channels, 384 output channels, 3x3 convolutions
 		self.bn7 = nn.BatchNorm2d(384) # Batch Norm layer
-		# Eightth convolutional layer
+		# Eighth convolutional layer
 		self.conv8 = nn.Conv2d(384, 512, 3)  # 384 input channels, 512 output channels, 3x3 convolutions
 		self.bn8 = nn.BatchNorm2d(512) # Batch Norm layer
 		
-		self.CONV_OUTPUT_SIZE = utils.shape2size(utils.tens2shape(self.get_dummy_fmap()[self.CONV_OUTPUT]))
+		self.CONV_OUTPUT_SIZE = None
+		self.CONV_OUTPUT_SIZE = utils.shape2size(utils.get_output_fmap_shape(self, input_shape)[self.CONV_OUTPUT])
 		
 		# FC Layers
 		self.fc9 = nn.Linear(self.CONV_OUTPUT_SIZE, self.NUM_HIDDEN)  # conv_output_size-dimensional input, self.NUM_HIDDEN-dimensional output
@@ -54,7 +65,7 @@ class Net(Model):
 		pool7_out = F.max_pool2d(relu7_out, 2)
 		bn7_out = self.bn7(pool7_out)
 		
-		# Layer 6: Convolutional + ReLU activations + Batch Norm
+		# Layer 8: Convolutional + ReLU activations + Batch Norm
 		conv8_out = self.conv8(bn7_out)
 		relu8_out = F.relu(conv8_out)
 		bn8_out = self.bn8(relu8_out)
@@ -76,15 +87,17 @@ class Net(Model):
 		# Compute the output feature map from the convolutional layers
 		out = self.get_conv_output(x)
 		
+		if self.CONV_OUTPUT_SIZE is None: return out
+		
 		# Stretch out the feature map before feeding it to the FC layers
 		flat = out[self.CONV_OUTPUT].view(-1, self.CONV_OUTPUT_SIZE)
 		
-		# Fifth Layer: FC with ReLU activations + Batch Norm
+		# Nineth Layer: FC with ReLU activations + Batch Norm
 		fc9_out = self.fc9(flat)
 		relu9_out = F.relu(fc9_out)
 		bn9_out = self.bn9(relu9_out)
 		
-		# Sixth Layer: dropout + FC, outputs are the class scores
+		# Tenth Layer: dropout + FC, outputs are the class scores
 		fc10_out = self.fc10(F.dropout(bn9_out, p=self.DROPOUT_P, training=self.training))
 		
 		# Build dictionary containing outputs from convolutional and FC layers
